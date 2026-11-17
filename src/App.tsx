@@ -568,7 +568,7 @@ export default function App() {
     setToolMode('select');
   };
 
-  const handleRunAiAnalysis = async (model: string = 'gemini-4-hydrogen') => {
+  const handleRunAiAnalysis = async (model: string = 'gemini-3.8-flash') => {
     setIsAnalyzing(true);
     setAiError(null);
     try {

@@ -116,7 +116,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
   onExportIpercExcel,
   onToggleCollapse,
 }) => {
-  const [aiModel, setAiModel] = useState<string>('gemini-4-hydrogen');
+  const [aiModel, setAiModel] = useState<string>('gemini-3.8-flash');
   const [question, setQuestion] = useState('');
   const [advisorReply, setAdvisorReply] = useState<string | null>(null);
   const [isAskingAdvisor, setIsAskingAdvisor] = useState(false);
@@ -266,8 +266,8 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                   onChange={(e) => setAiModel(e.target.value)}
                   className="w-full px-2 py-1.5 text-xs bg-white border border-slate-300 rounded-md focus:outline-none focus:border-blue-500 font-medium text-slate-800"
                 >
+                  <option value="gemini-3.8-flash">Gemini 3.8 Flash (Recomendado / Ultra Rápido 3-5s)</option>
                   <option value="gemini-4-hydrogen">Gemini 4 Hydrogen (Investigación / Razonamiento)</option>
-                  <option value="gemini-3.8-flash">Gemini 3.8 Flash (Recomendado / Rápido 3-5s)</option>
                   <option value="gemini-2.5-pro">Gemini 2.5 Pro (Análisis exhaustivo)</option>
                 </select>
                 <p className="text-[10px] text-slate-500 leading-tight">

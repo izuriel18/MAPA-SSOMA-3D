@@ -1,5 +1,7 @@
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 
+export const maxDuration = 60;
+
 const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 
 function getAiClient(): GoogleGenAI {
@@ -175,7 +177,8 @@ Sé muy preciso con las coordenadas visuales respecto a las paredes, pasillos, p
     let fallbackNotice = '';
 
     const executeAnalysis = async (targetModel: string) => {
-      return await ai.models.generateContent({
+      const isHydrogen = targetModel === 'gemini-4-hydrogen';
+      const call = ai.models.generateContent({
         model: targetModel,
         contents: {
           parts: [
@@ -189,11 +192,23 @@ Sé muy preciso con las coordenadas visuales respecto a las paredes, pasillos, p
           ],
         },
         config: {
-          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          ...(isHydrogen ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } } : {}),
           responseMimeType: 'application/json',
           responseSchema: ANALYSIS_SCHEMA,
         },
       });
+
+      // Si es Hydrogen, aplicar timeout de 12 segundos para evitar bloquear la función serverless de Vercel
+      if (isHydrogen) {
+        return await Promise.race([
+          call,
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('TIMEOUT_HYDROGEN: Superó los 12s de espera')), 12000)
+          ),
+        ]);
+      }
+
+      return await call;
     };
 
     let response;
@@ -202,9 +217,9 @@ Sé muy preciso con las coordenadas visuales respecto a las paredes, pasillos, p
     } catch (modelErr: any) {
       // Si el modelo pedido es Hydrogen y falla por demanda (503/500/timeout), conmutar a 3.8 Flash
       if (activeModel === 'gemini-4-hydrogen') {
-        console.warn('Gemini 4 Hydrogen falló, conmutando a gemini-3.8-flash...', modelErr?.message);
+        console.warn('Gemini 4 Hydrogen falló o superó límite, conmutando a gemini-3.8-flash...', modelErr?.message);
         activeModel = 'gemini-3.8-flash';
-        fallbackNotice = 'ℹ️ Nota: Gemini 4 Hydrogen presentó alta demanda temporal en Google. El análisis se completó exitosamente con Gemini 3.8 Flash.\n\n';
+        fallbackNotice = 'ℹ️ Nota: Gemini 4 Hydrogen tardó demasiado o presentó alta demanda en Google. El análisis se completó exitosamente con Gemini 3.8 Flash.\n\n';
         response = await executeAnalysis(activeModel);
       } else {
         throw modelErr;

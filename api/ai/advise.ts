@@ -1,5 +1,7 @@
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 
+export const maxDuration = 60;
+
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 
 function getAiClient(): GoogleGenAI {

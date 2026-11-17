@@ -5,6 +5,14 @@
     "api/**/*.ts": {
       "maxDuration": 60,
       "memory": 1024
+    },
+    "api/ai/analyze-blueprint.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "api/ai/advise.ts": {
+      "maxDuration": 60,
+      "memory": 1024
     }
   }
 }
