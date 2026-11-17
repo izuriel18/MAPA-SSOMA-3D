@@ -23,6 +23,7 @@ function getAiClient(): GoogleGenAI {
     httpOptions: {
       headers: {
         'User-Agent': 'aistudio-build',
+        'x-goog-api-key': apiKey,
       },
     },
   });
@@ -44,7 +45,11 @@ const VALID_SYMBOL_IDS = [
 const app = express();
 app.use(express.json({ limit: '25mb' }));
 
-app.post('/api/ai/analyze-blueprint', async (req: Request, res: Response) => {
+app.get(['/api/health', '/health'], (_req: Request, res: Response) => {
+  res.json({ status: 'ok', model: GEMINI_MODEL, timestamp: new Date().toISOString() });
+});
+
+app.post(['/api/ai/analyze-blueprint', '/ai/analyze-blueprint'], async (req: Request, res: Response) => {
   try {
     const {
       imageBase64,
@@ -106,7 +111,7 @@ Sé muy preciso con las coordenadas visuales respecto a las paredes, pasillos, p
         ],
       },
       config: {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -196,7 +201,7 @@ Sé muy preciso con las coordenadas visuales respecto a las paredes, pasillos, p
   }
 });
 
-app.post('/api/ai/advise', async (req: Request, res: Response) => {
+app.post(['/api/ai/advise', '/ai/advise'], async (req: Request, res: Response) => {
   try {
     const {
       question,

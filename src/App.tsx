@@ -32,6 +32,7 @@ import {
 import { parseDxfString, renderParsedDxfToDataUrl, type ParsedDxf } from './utils/dxfLoader';
 import { exportIpercToExcel, parseIpercExcelFile } from './utils/excelIpercLoader';
 import { exportRiskMapPng } from './utils/exportPng';
+import { optimizeImageForAi } from './utils/imageOptimizer';
 import { renderPdfFilePage } from './utils/pdfLoader';
 import { createSampleIndustrialBlueprint } from './utils/sampleBlueprint';
 
@@ -566,6 +567,9 @@ export default function App() {
     setIsAnalyzing(true);
     setAiError(null);
     try {
+      // Optimizar imagen para el análisis con IA (reduce payload de ~15MB a ~200KB evitando límite de Vercel)
+      const optimized = await optimizeImageForAi(blueprint.dataUrl, 1200, 0.82);
+
       // Include summary of loaded IPERC rows if available for smart matching
       const ipercNotes =
         ipercRows.length > 0
@@ -583,17 +587,25 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          imageBase64: blueprint.dataUrl,
-          mimeType: 'image/png',
+          imageBase64: optimized.dataUrl,
+          mimeType: optimized.mimeType,
           facilityType: metadata.facilityType,
           facilityName: metadata.facilityName,
           standard: metadata.standard,
           notes: ipercNotes,
         }),
       });
-      const data = await res.json();
+
+      const responseText = await res.text();
+      let data: any;
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        throw new Error(`Respuesta del servidor (${res.status}): ${responseText.slice(0, 160)}`);
+      }
+
       if (!res.ok) {
-        throw new Error(data.error || 'Error en el servidor al analizar el plano.');
+        throw new Error(data.error || `Error en el servidor (${res.status}) al analizar el plano.`);
       }
       setAiResult(data as AiAnalysisResult);
     } catch (err) {
@@ -670,9 +682,15 @@ export default function App() {
         currentSummary,
       }),
     });
-    const data = await res.json();
+    const responseText = await res.text();
+    let data: any;
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      throw new Error(`Respuesta del servidor (${res.status}): ${responseText.slice(0, 160)}`);
+    }
     if (!res.ok) {
-      throw new Error(data.error || 'Error consultando al asistente IA.');
+      throw new Error(data.error || `Error consultando al asistente IA (${res.status}).`);
     }
     return data.answer as string;
   };
