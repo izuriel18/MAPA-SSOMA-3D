@@ -1,0 +1,8 @@
+{
+  "name": "Remix MapaRiesgo Studio",
+  "description": "Estudio profesional para crear Mapas de Riesgos e IPER desde planos PDF y DXF/DWG con asistencia de IA y simbología ISO 7010.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
