@@ -777,6 +777,34 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                   </select>
                 </div>
 
+                {/* Orientación / Rotación */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-[11px] font-medium text-slate-600">
+                      Orientación / Giro
+                    </label>
+                    <span className="font-mono text-xs text-slate-700 font-semibold">
+                      {selectedMarker.rotation || 0}°
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1">
+                    {([0, 90, 180, 270] as const).map((deg) => (
+                      <button
+                        key={deg}
+                        type="button"
+                        onClick={() => onUpdateMarker({ ...selectedMarker, rotation: deg })}
+                        className={`px-2 py-1 text-xs rounded border transition-colors ${
+                          (selectedMarker.rotation || 0) === deg
+                            ? 'bg-slate-900 text-white border-slate-900 font-semibold'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        {deg}°
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="space-y-2">
                   <label className="block text-[11px] font-medium text-slate-600">
                     Etiqueta / Descripción

@@ -1,14 +1,17 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  ArrowLeftRight,
   Check,
   Compass,
   Eye,
   Maximize2,
   MousePointer,
   Plus,
+  RotateCw,
   Route,
   ShieldAlert,
   Square,
+  Trash2,
   X,
   ZoomIn,
   ZoomOut,
@@ -51,6 +54,10 @@ interface BlueprintCanvasProps {
   onMoveMarker: (id: string, x: number, y: number) => void;
   onAddZone: (zone: Omit<RiskZone, 'id'>) => void;
   onAddRoute: (points: RoutePoint[]) => void;
+  onDeleteMarker?: (id: string) => void;
+  onUpdateMarker?: (marker: MapMarker) => void;
+  onDeleteZone?: (id: string) => void;
+  onDeleteRoute?: (id: string) => void;
 }
 
 export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
@@ -71,6 +78,10 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
   onMoveMarker,
   onAddZone,
   onAddRoute,
+  onDeleteMarker,
+  onUpdateMarker,
+  onDeleteZone,
+  onDeleteRoute,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -90,6 +101,96 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
 
   // Dragging existing marker
   const [draggingMarkerId, setDraggingMarkerId] = useState<string | null>(null);
+
+  // Marker size & badge controls
+  const [markerSizeChoice, setMarkerSizeChoice] = useState<'S' | 'M' | 'L'>('M');
+  const [showBadges, setShowBadges] = useState(false);
+
+  const handleRotateMarker = (m: MapMarker) => {
+    if (!onUpdateMarker) return;
+    const nextRot = ((m.rotation || 0) + 90) % 360;
+    onUpdateMarker({ ...m, rotation: nextRot });
+  };
+
+  const isArrowSymbol = (id: string) =>
+    id === 'E_RUTA_IZQ' || id === 'E_RUTA_DER' || id === 'E_RUTA_RECTA';
+
+  const handleInvertArrow = (m: MapMarker) => {
+    if (!onUpdateMarker) return;
+    let nextId = m.symbolId;
+    let nextLabel = m.label;
+    if (m.symbolId === 'E_RUTA_IZQ') {
+      nextId = 'E_RUTA_DER';
+      nextLabel = 'Ruta de Evacuación (Derecha)';
+    } else if (m.symbolId === 'E_RUTA_DER') {
+      nextId = 'E_RUTA_IZQ';
+      nextLabel = 'Ruta de Evacuación (Izquierda)';
+    }
+    const nextRot = ((m.rotation || 0) + 180) % 360;
+    onUpdateMarker({ ...m, symbolId: nextId, label: nextLabel, rotation: nextRot });
+  };
+
+  // Keyboard Shortcuts (Delete, R to rotate, Arrow keys to nudge, Escape to deselect)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeTag = document.activeElement?.tagName;
+      if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT') {
+        return;
+      }
+
+      if (!selectedId || !selectedType) return;
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        if (selectedType === 'marker' && onDeleteMarker) {
+          onDeleteMarker(selectedId);
+        } else if (selectedType === 'zone' && onDeleteZone) {
+          onDeleteZone(selectedId);
+        } else if (selectedType === 'route' && onDeleteRoute) {
+          onDeleteRoute(selectedId);
+        }
+        onSelectElement(null, null);
+      } else if (e.key === 'Escape') {
+        onSelectElement(null, null);
+      } else if ((e.key === 'r' || e.key === 'R') && selectedType === 'marker' && onUpdateMarker) {
+        e.preventDefault();
+        const m = markers.find((item) => item.id === selectedId);
+        if (m) {
+          handleRotateMarker(m);
+        }
+      } else if (selectedType === 'marker' && e.key.startsWith('Arrow')) {
+        e.preventDefault();
+        const m = markers.find((item) => item.id === selectedId);
+        if (m) {
+          const step = e.shiftKey ? 10 : 2;
+          let dx = 0;
+          let dy = 0;
+          if (e.key === 'ArrowUp') dy = -step;
+          if (e.key === 'ArrowDown') dy = step;
+          if (e.key === 'ArrowLeft') dx = -step;
+          if (e.key === 'ArrowRight') dx = step;
+          onMoveMarker(
+            m.id,
+            Math.max(0, Math.min(1000, m.x + dx)),
+            Math.max(0, Math.min(1000, m.y + dy))
+          );
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    selectedId,
+    selectedType,
+    markers,
+    onDeleteMarker,
+    onDeleteZone,
+    onDeleteRoute,
+    onUpdateMarker,
+    onMoveMarker,
+    onSelectElement,
+  ]);
 
   const aspect = (blueprint.height || 1000) / (blueprint.width || 1600);
   const baseRenderWidth = 960;
@@ -369,6 +470,39 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
             </div>
           )}
 
+          {/* Marker Size & Badge Controls */}
+          <div className="flex items-center gap-1 border border-slate-200 rounded-md bg-white px-1.5 py-1 text-xs">
+            <span className="text-[10px] text-slate-500 font-semibold px-0.5">Señales:</span>
+            {(['S', 'M', 'L'] as const).map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setMarkerSizeChoice(s)}
+                className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold transition-colors ${
+                  markerSizeChoice === s
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+                title={`Tamaño de señales: ${s === 'S' ? 'Compacto (18px)' : s === 'M' ? 'Normal (24px)' : 'Grande (32px)'}`}
+              >
+                {s}
+              </button>
+            ))}
+            <span className="w-px h-3.5 bg-slate-200 mx-0.5" />
+            <button
+              type="button"
+              onClick={() => setShowBadges(!showBadges)}
+              className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold transition-colors ${
+                showBadges
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+              }`}
+              title={showBadges ? 'Ocultar números identificadores' : 'Mostrar números identificadores'}
+            >
+              # Núm
+            </button>
+          </div>
+
           {/* Zoom Controls */}
           <div className="flex items-center gap-1 border border-slate-200 rounded-md bg-white px-1.5 py-1">
             <button
@@ -603,6 +737,8 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
           {/* Interactive ISO / NTP Markers */}
           {markers.filter((m) => isMarkerVisible(m.symbolId)).map((marker, idx) => {
             const isSelected = selectedType === 'marker' && selectedId === marker.id;
+            const markerPx = markerSizeChoice === 'S' ? 18 : markerSizeChoice === 'M' ? 24 : 32;
+
             return (
               <div
                 key={marker.id}
@@ -616,22 +752,80 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
                   onSelectElement('marker', marker.id);
                   setDraggingMarkerId(marker.id);
                 }}
-                title={`${marker.label} (${marker.zoneName})`}
+                title={`${marker.label} (${marker.zoneName}) — [R] Girar · [Supr] Eliminar`}
                 className={`absolute -translate-x-1/2 -translate-y-1/2 group ${
                   toolMode === 'select' ? 'cursor-move' : 'pointer-events-none'
                 }`}
               >
+                {/* Floating Quick Action Toolbar above selected marker */}
+                {isSelected && (
+                  <div
+                    className="absolute -top-9 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 px-1.5 py-0.5 bg-slate-900/95 backdrop-blur-xs text-white rounded-md shadow-xl border border-slate-700 pointer-events-auto whitespace-nowrap animate-in fade-in duration-100"
+                    onMouseDown={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRotateMarker(marker);
+                      }}
+                      title="Girar 90° (Tecla R)"
+                      className="p-1 hover:bg-slate-700 rounded transition-colors text-blue-300 hover:text-white"
+                    >
+                      <RotateCw className="w-3.5 h-3.5" />
+                    </button>
+
+                    {isArrowSymbol(marker.symbolId) && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleInvertArrow(marker);
+                        }}
+                        title="Invertir dirección de la flecha"
+                        className="p-1 hover:bg-slate-700 rounded transition-colors text-emerald-300 hover:text-white"
+                      >
+                        <ArrowLeftRight className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+
+                    {onDeleteMarker && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteMarker(marker.id);
+                          onSelectElement(null, null);
+                        }}
+                        title="Eliminar señal (Tecla Supr / Delete)"
+                        className="p-1 hover:bg-red-600 rounded transition-colors text-red-300 hover:text-white"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 <div
-                  className={`relative p-0.5 rounded-full bg-white/90 shadow-sm transition-transform ${
+                  className={`relative p-0.5 rounded-full bg-white/90 shadow-xs transition-transform ${
                     isSelected
-                      ? 'ring-2 ring-blue-600 scale-115'
-                      : 'hover:scale-110'
+                      ? 'ring-2 ring-blue-600 scale-110 shadow-md'
+                      : 'hover:scale-105'
                   }`}
                 >
-                  <IsoSymbolIcon symbolId={marker.symbolId} size={28} />
-                  <span className="absolute -top-1.5 -right-1.5 px-1 min-w-[16px] h-4 flex items-center justify-center rounded bg-slate-900 text-white font-mono tabular-nums text-[9px] font-semibold">
-                    {idx + 1}
-                  </span>
+                  <div
+                    style={{
+                      transform: `rotate(${marker.rotation || 0}deg)`,
+                      transition: 'transform 0.15s ease-out',
+                    }}
+                  >
+                    <IsoSymbolIcon symbolId={marker.symbolId} size={markerPx} />
+                  </div>
+                  {showBadges && (
+                    <span className="absolute -top-1 -right-1 px-1 min-w-[14px] h-3.5 flex items-center justify-center rounded bg-slate-900 text-white font-mono tabular-nums text-[8px] font-semibold">
+                      {idx + 1}
+                    </span>
+                  )}
                 </div>
               </div>
             );

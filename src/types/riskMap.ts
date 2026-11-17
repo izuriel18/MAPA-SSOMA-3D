@@ -45,6 +45,7 @@ export interface MapMarker {
   severity: number; // 1-5
   notes: string;
   source?: 'manual' | 'ai' | 'iperc';
+  rotation?: number; // 0, 90, 180, 270 (grados de orientación)
 }
 
 export interface RiskZone {

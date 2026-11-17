@@ -201,7 +201,15 @@ export async function exportRiskMapPng(params: {
     ctx.fill();
 
     if (img) {
-      ctx.drawImage(img, mx - markerSize / 2, my - markerSize / 2, markerSize, markerSize);
+      if (marker.rotation) {
+        ctx.save();
+        ctx.translate(mx, my);
+        ctx.rotate((marker.rotation * Math.PI) / 180);
+        ctx.drawImage(img, -markerSize / 2, -markerSize / 2, markerSize, markerSize);
+        ctx.restore();
+      } else {
+        ctx.drawImage(img, mx - markerSize / 2, my - markerSize / 2, markerSize, markerSize);
+      }
     }
 
     // Number badge

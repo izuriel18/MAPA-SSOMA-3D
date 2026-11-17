@@ -996,6 +996,24 @@ export default function App() {
               onMoveMarker={handleMoveMarker}
               onAddZone={handleAddZone}
               onAddRoute={handleAddRoute}
+              onDeleteMarker={(id) => {
+                setMarkers((prev) => prev.filter((m) => m.id !== id));
+                setSelectedType(null);
+                setSelectedId(null);
+              }}
+              onUpdateMarker={(m) =>
+                setMarkers((prev) => prev.map((item) => (item.id === m.id ? m : item)))
+              }
+              onDeleteZone={(id) => {
+                setZones((prev) => prev.filter((z) => z.id !== id));
+                setSelectedType(null);
+                setSelectedId(null);
+              }}
+              onDeleteRoute={(id) => {
+                setRoutes((prev) => prev.filter((r) => r.id !== id));
+                setSelectedType(null);
+                setSelectedId(null);
+              }}
             />
 
             {/* Botón flotante para reabrir el panel derecho si está oculto */}
