@@ -1,8 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Download } from 'lucide-react';
+import {
+  Compass,
+  Download,
+  FileSpreadsheet,
+  FolderOpen,
+  Layers,
+  Save,
+  ShieldAlert,
+  Sparkles,
+} from 'lucide-react';
 import { BlueprintCanvas } from './components/BlueprintCanvas';
 import { DwgPdfGuideView } from './components/DwgPdfGuideView';
-import { InspectorPanel } from './components/InspectorPanel';
+import { InspectorPanel, type InspectorTab } from './components/InspectorPanel';
 import { IperMatrixView } from './components/IperMatrixView';
 import { SidebarCatalog } from './components/SidebarCatalog';
 import { getSymbolById } from './data/isoSymbols';
@@ -12,12 +21,16 @@ import {
   type CanvasToolMode,
   type DxfLayerInfo,
   type EvacuationRoute,
+  type ExportFormat,
+  type IpercRow,
   type MapMarker,
+  type MapViewMode,
   type PlanMetadata,
   type RiskZone,
   type RoutePoint,
 } from './types/riskMap';
 import { parseDxfString, renderParsedDxfToDataUrl, type ParsedDxf } from './utils/dxfLoader';
+import { exportIpercToExcel, parseIpercExcelFile } from './utils/excelIpercLoader';
 import { exportRiskMapPng } from './utils/exportPng';
 import { renderPdfFilePage } from './utils/pdfLoader';
 import { createSampleIndustrialBlueprint } from './utils/sampleBlueprint';
@@ -29,11 +42,18 @@ const STORAGE_KEY = 'mapariesgo_studio_project_v1';
 const DEFAULT_METADATA: PlanMetadata = {
   facilityName: 'Planta Industrial Modelo — Nave A',
   facilityType: 'Planta Industrial / Maestranza',
-  standard: 'ISO 7010 / NTP 399.010-1',
+  standard: 'NTP 399.010-1 / Ley 29783 / RNE A.130',
   author: 'Área SST / Prevención',
   revision: 'Rev. 01',
   date: new Date().toISOString().slice(0, 10),
   scaleText: '1:100',
+  companyRuc: '20100012345',
+  companyName: 'INDUSTRIAS DEL PERÚ S.A.C.',
+  facilityAddress: 'Av. Industrial 450, Lima - Perú',
+  approvalDate: new Date().toISOString().slice(0, 10),
+  csstRepresentative: 'Comité Paritario de SST',
+  headcount: '45',
+  emergencyContact: '(01) 619-0000 / Bomberos: 116',
 };
 
 const INITIAL_SAMPLE_ZONES: RiskZone[] = [
@@ -79,6 +99,7 @@ const INITIAL_SAMPLE_ZONES: RiskZone[] = [
 ];
 
 const INITIAL_SAMPLE_MARKERS: MapMarker[] = [
+  // Advertencias & EPP
   {
     id: 'm-sample-1',
     symbolId: 'W024',
@@ -120,19 +141,6 @@ const INITIAL_SAMPLE_MARKERS: MapMarker[] = [
   },
   {
     id: 'm-sample-4',
-    symbolId: 'F001',
-    label: 'Extintor CO2 (Tableros) / PQS',
-    zoneName: 'Pasillo Principal',
-    x: 245,
-    y: 660,
-    riskCategory: 'Incendio',
-    probability: 1,
-    severity: 3,
-    notes: 'Inspección mensual vigente, despejado a 1.20 m.',
-    source: 'manual',
-  },
-  {
-    id: 'm-sample-5',
     symbolId: 'W021',
     label: 'Almacenamiento de solventes inflamables',
     zoneName: 'Almacén Químicos',
@@ -145,7 +153,7 @@ const INITIAL_SAMPLE_MARKERS: MapMarker[] = [
     source: 'manual',
   },
   {
-    id: 'm-sample-6',
+    id: 'm-sample-5',
     symbolId: 'E012',
     label: 'Ducha y lavaojos de emergencia',
     zoneName: 'Almacén Químicos',
@@ -157,8 +165,62 @@ const INITIAL_SAMPLE_MARKERS: MapMarker[] = [
     notes: 'Prueba semanal de flujo de agua.',
     source: 'manual',
   },
+
+  // Evacuación y Señales NTP Perú
+  {
+    id: 'm-sample-6',
+    symbolId: 'E_SISMO',
+    label: 'Zona Segura en Caso de Sismos (S)',
+    zoneName: 'Nave Central',
+    x: 320,
+    y: 440,
+    riskCategory: 'Locativo',
+    probability: 1,
+    severity: 1,
+    notes: 'Columna estructural principal identificada según INDECI.',
+    source: 'manual',
+  },
   {
     id: 'm-sample-7',
+    symbolId: 'F001',
+    label: 'Extintor PQS 6kg (ABC)',
+    zoneName: 'Pasillo Principal',
+    x: 245,
+    y: 660,
+    riskCategory: 'Incendio',
+    probability: 1,
+    severity: 3,
+    notes: 'Inspección mensual vigente, libre de obstáculos a 1.20 m.',
+    source: 'manual',
+  },
+  {
+    id: 'm-sample-8',
+    symbolId: 'F_CO2',
+    label: 'Extintor CO2 5kg (BC)',
+    zoneName: 'Subestación Eléctrica',
+    x: 190,
+    y: 730,
+    riskCategory: 'Incendio',
+    probability: 1,
+    severity: 3,
+    notes: 'Gas limpio no conductor para tableros eléctricos.',
+    source: 'manual',
+  },
+  {
+    id: 'm-sample-9',
+    symbolId: 'E_LUZ',
+    label: 'Luz de emergencia autónoma',
+    zoneName: 'Salida Oeste',
+    x: 95,
+    y: 505,
+    riskCategory: 'Locativo',
+    probability: 1,
+    severity: 2,
+    notes: 'Autonomía de 90 minutos según RNE Norma A.130.',
+    source: 'manual',
+  },
+  {
+    id: 'm-sample-10',
     symbolId: 'E001',
     label: 'Salida de emergencia Oeste',
     zoneName: 'Pasillo Principal',
@@ -171,7 +233,7 @@ const INITIAL_SAMPLE_MARKERS: MapMarker[] = [
     source: 'manual',
   },
   {
-    id: 'm-sample-8',
+    id: 'm-sample-11',
     symbolId: 'E001',
     label: 'Salida de emergencia Este',
     zoneName: 'Pasillo Principal',
@@ -180,7 +242,7 @@ const INITIAL_SAMPLE_MARKERS: MapMarker[] = [
     riskCategory: 'Locativo',
     probability: 1,
     severity: 2,
-    notes: 'Puerta abatible hacia el exterior.',
+    notes: 'Puerta abatible hacia el exterior con rampa.',
     source: 'manual',
   },
 ];
@@ -216,6 +278,8 @@ export default function App() {
   const sampleBlueprint = useMemo(() => createSampleIndustrialBlueprint(), []);
 
   const [view, setView] = useState<AppView>('editor');
+  const [mapViewMode, setMapViewMode] = useState<MapViewMode>('all');
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('png');
   const [blueprint, setBlueprint] = useState<BlueprintSource>({
     type: 'sample',
     fileName: 'planta_industrial_modelo.png',
@@ -228,16 +292,17 @@ export default function App() {
   const [markers, setMarkers] = useState<MapMarker[]>(INITIAL_SAMPLE_MARKERS);
   const [routes, setRoutes] = useState<EvacuationRoute[]>(INITIAL_SAMPLE_ROUTES);
   const [metadata, setMetadata] = useState<PlanMetadata>(DEFAULT_METADATA);
+  const [ipercRows, setIpercRows] = useState<IpercRow[]>([]);
 
   // Active file refs for multi-page PDF or CAD DXF layer toggling
   const activePdfFileRef = useRef<File | null>(null);
   const activeDxfRef = useRef<ParsedDxf | null>(null);
 
   const [toolMode, setToolMode] = useState<CanvasToolMode>('select');
-  const [activeSymbolId, setActiveSymbolId] = useState<string>('W012');
+  const [activeSymbolId, setActiveSymbolId] = useState<string>('E_SISMO');
   const [selectedType, setSelectedType] = useState<'marker' | 'zone' | 'route' | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [inspectorTab, setInspectorTab] = useState<'ai' | 'properties'>('ai');
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>('ai');
 
   const [layerVisibility, setLayerVisibility] = useState({
     zones: true,
@@ -265,11 +330,13 @@ export default function App() {
         markers?: MapMarker[];
         routes?: EvacuationRoute[];
         metadata?: PlanMetadata;
+        ipercRows?: IpercRow[];
       };
       if (Array.isArray(parsed.zones)) setZones(parsed.zones);
       if (Array.isArray(parsed.markers)) setMarkers(parsed.markers);
       if (Array.isArray(parsed.routes)) setRoutes(parsed.routes);
       if (parsed.metadata) setMetadata(parsed.metadata);
+      if (Array.isArray(parsed.ipercRows)) setIpercRows(parsed.ipercRows);
     } catch {
       // Ignore corrupt localStorage
     }
@@ -280,12 +347,12 @@ export default function App() {
     try {
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ zones, markers, routes, metadata })
+        JSON.stringify({ zones, markers, routes, metadata, ipercRows })
       );
     } catch {
       // Ignore storage quota errors
     }
-  }, [zones, markers, routes, metadata]);
+  }, [zones, markers, routes, metadata, ipercRows]);
 
   const selectedMarker = useMemo(
     () => (selectedType === 'marker' ? markers.find((m) => m.id === selectedId) ?? null : null),
@@ -315,7 +382,7 @@ export default function App() {
 
     if (ext === 'dwg') {
       setDwgNotice(
-        'Los archivos .DWG son binarios propietarios de AutoCAD. En AutoCAD/BricsCAD/Autodesk Viewer usa "Exportar a PDF" (recomendado) o "Guardar como DXF" y súbelo aquí para editar capas y analizarlo con IA.'
+        'Los archivos .DWG son binarios de AutoCAD. En AutoCAD/BricsCAD usa "Exportar a PDF" o "Guardar como DXF" y súbelo aquí para editar capas y analizarlo con IA.'
       );
       return;
     }
@@ -344,7 +411,7 @@ export default function App() {
         const parsed = parseDxfString(text);
         if (parsed.entities.length === 0) {
           throw new Error(
-            'El archivo DXF no contiene entidades vectoriales legibles (LINE, LWPOLYLINE, CIRCLE, ARC). Si es DXF binario, guárdalo como DXF ASCII o PDF.'
+            'El archivo DXF no contiene entidades vectoriales legibles (LINE, LWPOLYLINE, CIRCLE, ARC). Si es binario, guárdalo como DXF ASCII.'
           );
         }
         activeDxfRef.current = parsed;
@@ -499,6 +566,19 @@ export default function App() {
     setIsAnalyzing(true);
     setAiError(null);
     try {
+      // Include summary of loaded IPERC rows if available for smart matching
+      const ipercNotes =
+        ipercRows.length > 0
+          ? `Datos de la Matriz IPERC de la empresa (${ipercRows.length} registros cargados): ` +
+            ipercRows
+              .slice(0, 8)
+              .map(
+                (r) =>
+                  `[Área: "${r.area}", Peligro: "${r.danger}", Riesgo: "${r.risk}", Nivel: ${r.riskLevel}]`
+              )
+              .join('; ')
+          : '';
+
       const res = await fetch('/api/ai/analyze-blueprint', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -508,6 +588,7 @@ export default function App() {
           facilityType: metadata.facilityType,
           facilityName: metadata.facilityName,
           standard: metadata.standard,
+          notes: ipercNotes,
         }),
       });
       const data = await res.json();
@@ -579,13 +660,13 @@ export default function App() {
   };
 
   const handleAskAiAdvisor = async (question: string): Promise<string> => {
-    const currentSummary = `${zones.length} zonas IPER (${zones.map((z) => z.name).join(', ')}), ${markers.length} pictogramas ISO 7010 colocados, ${routes.length} rutas de evacuación.`;
+    const currentSummary = `${zones.length} zonas IPER (${zones.map((z) => z.name).join(', ')}), ${markers.length} señales NTP/ISO ubicadas, ${routes.length} rutas de evacuación. ${ipercRows.length} peligros en matriz IPERC.`;
     const res = await fetch('/api/ai/advise', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         question,
-        facilityContext: `${metadata.facilityName} (${metadata.facilityType}), Norma: ${metadata.standard}`,
+        facilityContext: `${metadata.facilityName} (${metadata.facilityType}), Empresa: ${metadata.companyName || 'No esp.'}, Norma: ${metadata.standard}`,
         currentSummary,
       }),
     });
@@ -596,7 +677,69 @@ export default function App() {
     return data.answer as string;
   };
 
-  const handleExportPng = async () => {
+  const handleUploadIpercExcel = async (file: File) => {
+    const rows = await parseIpercExcelFile(file);
+    setIpercRows(rows);
+  };
+
+  const handleExportIpercExcel = () => {
+    const filename = `${(metadata.companyName || metadata.facilityName).toLowerCase().replace(/[^a-z0-9]+/g, '_')}_matriz_iperc.xlsx`;
+    exportIpercToExcel(ipercRows, filename);
+  };
+
+  const handleApplyIpercToMap = () => {
+    if (ipercRows.length === 0) return;
+
+    // Group IPERC items by area
+    const areaMap = new Map<string, IpercRow[]>();
+    for (const r of ipercRows) {
+      const list = areaMap.get(r.area) || [];
+      list.push(r);
+      areaMap.set(r.area, list);
+    }
+
+    const newZones: RiskZone[] = [];
+    let idx = 0;
+    const areas = Array.from(areaMap.keys());
+
+    for (const area of areas) {
+      const items = areaMap.get(area) || [];
+      const worst = items.reduce((prev, curr) => (curr.riskScore > prev.riskScore ? curr : prev), items[0]);
+      const x = 70 + (idx % 3) * 300;
+      const y = 100 + Math.floor(idx / 3) * 270;
+      idx++;
+
+      newZones.push({
+        id: createUid('z-iperc'),
+        name: area,
+        riskCategory: worst.danger.toLowerCase().includes('electr')
+          ? 'Eléctrico'
+          : worst.danger.toLowerCase().includes('quim') || worst.danger.toLowerCase().includes('inflam')
+          ? 'Químico'
+          : worst.danger.toLowerCase().includes('ruido')
+          ? 'Físico'
+          : worst.danger.toLowerCase().includes('mecan') || worst.danger.toLowerCase().includes('atrap')
+          ? 'Mecánico'
+          : 'Locativo',
+        x: Math.min(x, 700),
+        y: Math.min(y, 700),
+        width: 260,
+        height: 220,
+        probability: worst.probability,
+        severity: worst.severity,
+        controls: [worst.engineeringControl, worst.administrativeControl, worst.eppControl]
+          .filter(Boolean)
+          .join(' | ') || worst.risk,
+        source: 'iperc',
+      });
+    }
+
+    setZones((prev) => [...prev, ...newZones]);
+    setView('editor');
+    setInspectorTab('properties');
+  };
+
+  const handleExportPng = async (exportMode?: MapViewMode, fmt?: ExportFormat) => {
     setIsExporting(true);
     try {
       await exportRiskMapPng({
@@ -605,6 +748,8 @@ export default function App() {
         markers,
         routes,
         metadata,
+        mode: exportMode || mapViewMode,
+        format: fmt || exportFormat,
       });
     } finally {
       setIsExporting(false);
@@ -618,6 +763,7 @@ export default function App() {
       zones,
       markers,
       routes,
+      ipercRows,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: 'application/json',
@@ -625,7 +771,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${metadata.facilityName.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_proyecto.json`;
+    link.download = `${metadata.facilityName.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_proyecto_ssoma.json`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -638,11 +784,13 @@ export default function App() {
         zones?: RiskZone[];
         markers?: MapMarker[];
         routes?: EvacuationRoute[];
+        ipercRows?: IpercRow[];
       };
       if (parsed.metadata) setMetadata(parsed.metadata);
       if (Array.isArray(parsed.zones)) setZones(parsed.zones);
       if (Array.isArray(parsed.markers)) setMarkers(parsed.markers);
       if (Array.isArray(parsed.routes)) setRoutes(parsed.routes);
+      if (Array.isArray(parsed.ipercRows)) setIpercRows(parsed.ipercRows);
       setView('editor');
     } catch {
       setAiError('El archivo JSON del proyecto no tiene un formato válido.');
@@ -651,43 +799,51 @@ export default function App() {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-slate-50 text-slate-900 overflow-hidden">
-      {/* Top Bar: 3-zone contract */}
-      <header className="h-14 shrink-0 bg-white border-b border-slate-200 px-6 flex items-center justify-between gap-8 z-20">
-        {/* Zone 1: Single-line Brand Title */}
-        <span className="font-display text-base font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0">
-          MapaRiesgo Studio
-        </span>
+      {/* Top Header */}
+      <header className="h-14 shrink-0 bg-white border-b border-slate-200 px-6 flex items-center justify-between gap-4 z-20">
+        {/* Brand & Peru SSOMA badge */}
+        <div className="flex items-center gap-3">
+          <span className="font-display text-base font-bold tracking-tight text-slate-900 whitespace-nowrap">
+            MapaRiesgo Studio
+          </span>
+          <span className="hidden xl:inline-flex px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
+            NTP 399.010-1 · Ley 29783 (Perú)
+          </span>
+        </div>
 
-        {/* Zone 2: Concise single-line navigation links */}
-        <nav className="flex items-center gap-6 text-sm font-medium">
+        {/* View Navigation Tabs */}
+        <nav className="flex items-center gap-5 text-sm font-medium">
           <button
             type="button"
             onClick={() => setView('editor')}
-            className={`py-1 whitespace-nowrap shrink-0 transition-colors border-b-2 ${
+            className={`py-1 whitespace-nowrap transition-colors border-b-2 ${
               view === 'editor'
-                ? 'border-slate-900 text-slate-900'
+                ? 'border-slate-900 text-slate-900 font-semibold'
                 : 'border-transparent text-slate-500 hover:text-slate-900'
             }`}
           >
-            Editor de Plano
+            Editor de Planos
           </button>
           <button
             type="button"
             onClick={() => setView('iper')}
-            className={`py-1 whitespace-nowrap shrink-0 transition-colors border-b-2 ${
+            className={`py-1 whitespace-nowrap transition-colors border-b-2 inline-flex items-center gap-1.5 ${
               view === 'iper'
-                ? 'border-slate-900 text-slate-900'
+                ? 'border-emerald-600 text-emerald-800 font-semibold'
                 : 'border-transparent text-slate-500 hover:text-slate-900'
             }`}
           >
-            Matriz IPER ({zones.length + markers.length})
+            <span>Matriz IPERC</span>
+            <span className="font-mono text-xs px-1.5 py-0.2 rounded-full bg-slate-100 text-slate-700">
+              {ipercRows.length > 0 ? `${ipercRows.length}` : `${zones.length + markers.length}`}
+            </span>
           </button>
           <button
             type="button"
             onClick={() => setView('guide')}
-            className={`py-1 whitespace-nowrap shrink-0 transition-colors border-b-2 ${
+            className={`py-1 whitespace-nowrap transition-colors border-b-2 ${
               view === 'guide'
-                ? 'border-slate-900 text-slate-900'
+                ? 'border-slate-900 text-slate-900 font-semibold'
                 : 'border-transparent text-slate-500 hover:text-slate-900'
             }`}
           >
@@ -695,17 +851,80 @@ export default function App() {
           </button>
         </nav>
 
-        {/* Zone 3: 1 Primary CTA */}
-        <div className="flex items-center shrink-0">
+        {/* Export and Save Controls */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Format Selector: PNG | PDF | JPG */}
+          <div className="flex items-center p-0.5 bg-slate-100 rounded-lg border border-slate-200">
+            {(['png', 'pdf', 'jpg'] as const).map((fmt) => (
+              <button
+                key={fmt}
+                type="button"
+                onClick={() => setExportFormat(fmt)}
+                className={`px-2 py-1 text-[11px] font-mono font-bold uppercase rounded transition-colors ${
+                  exportFormat === fmt
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+                title={`Descargar en formato ${fmt.toUpperCase()}`}
+              >
+                {fmt}
+              </button>
+            ))}
+          </div>
+
+          {/* Export Risk Map */}
           <button
             type="button"
             disabled={isExporting}
-            onClick={handleExportPng}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0"
+            onClick={() => handleExportPng('risks', exportFormat)}
+            title={`Descargar lámina de Mapa de Riesgos en ${exportFormat.toUpperCase()}`}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shadow-xs"
           >
-            <Download className="w-3.5 h-3.5" />
-            {isExporting ? 'Exportando...' : 'Exportar Mapa PNG'}
+            <ShieldAlert className="w-3.5 h-3.5" />
+            <span>Descargar Riesgos ({exportFormat.toUpperCase()})</span>
           </button>
+
+          {/* Export Evacuation Map */}
+          <button
+            type="button"
+            disabled={isExporting}
+            onClick={() => handleExportPng('evacuacion', exportFormat)}
+            title={`Descargar lámina de Evacuación e INDECI en ${exportFormat.toUpperCase()}`}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shadow-xs"
+          >
+            <Compass className="w-3.5 h-3.5" />
+            <span>Descargar Evacuación ({exportFormat.toUpperCase()})</span>
+          </button>
+
+          {/* Backup project JSON */}
+          <button
+            type="button"
+            onClick={handleExportJson}
+            title="Guardar archivo de respaldo del proyecto (.json)"
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-slate-700 bg-white hover:bg-slate-50 rounded-lg border border-slate-200 whitespace-nowrap shadow-xs"
+          >
+            <Save className="w-3.5 h-3.5 text-slate-500" />
+            <span className="hidden md:inline">Guardar Avance (.json)</span>
+          </button>
+
+          {/* Load project JSON */}
+          <label
+            title="Cargar archivo de proyecto previo (.json)"
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-slate-700 bg-white hover:bg-slate-50 rounded-lg border border-slate-200 whitespace-nowrap shadow-xs cursor-pointer"
+          >
+            <FolderOpen className="w-3.5 h-3.5 text-slate-500" />
+            <span className="hidden md:inline">Cargar (.json)</span>
+            <input
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleImportJson(f);
+                e.target.value = '';
+              }}
+            />
+          </label>
         </div>
       </header>
 
@@ -738,6 +957,8 @@ export default function App() {
               zones={zones}
               markers={markers}
               routes={routes}
+              viewMode={mapViewMode}
+              onSetViewMode={setMapViewMode}
               toolMode={toolMode}
               activeSymbolId={activeSymbolId}
               selectedId={selectedId}
@@ -761,24 +982,24 @@ export default function App() {
             selectedMarker={selectedMarker}
             selectedZone={selectedZone}
             selectedRoute={selectedRoute}
-            onUpdateMarker={(updated) =>
-              setMarkers((prev) => prev.map((m) => (m.id === updated.id ? updated : m)))
+            onUpdateMarker={(m) =>
+              setMarkers((prev) => prev.map((item) => (item.id === m.id ? m : item)))
             }
             onDeleteMarker={(id) => {
               setMarkers((prev) => prev.filter((m) => m.id !== id));
               setSelectedType(null);
               setSelectedId(null);
             }}
-            onUpdateZone={(updated) =>
-              setZones((prev) => prev.map((z) => (z.id === updated.id ? updated : z)))
+            onUpdateZone={(z) =>
+              setZones((prev) => prev.map((item) => (item.id === z.id ? z : item)))
             }
             onDeleteZone={(id) => {
               setZones((prev) => prev.filter((z) => z.id !== id));
               setSelectedType(null);
               setSelectedId(null);
             }}
-            onUpdateRoute={(updated) =>
-              setRoutes((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
+            onUpdateRoute={(r) =>
+              setRoutes((prev) => prev.map((item) => (item.id === r.id ? r : item)))
             }
             onDeleteRoute={(id) => {
               setRoutes((prev) => prev.filter((r) => r.id !== id));
@@ -791,6 +1012,9 @@ export default function App() {
             onRunAiAnalysis={handleRunAiAnalysis}
             onApplyAiSuggestions={handleApplyAiSuggestions}
             onAskAiAdvisor={handleAskAiAdvisor}
+            ipercRows={ipercRows}
+            onUploadIpercExcel={handleUploadIpercExcel}
+            onApplyIpercToMap={handleApplyIpercToMap}
           />
         </div>
       )}
@@ -799,12 +1023,16 @@ export default function App() {
         <IperMatrixView
           zones={zones}
           markers={markers}
+          ipercRows={ipercRows}
           onExportJson={handleExportJson}
           onImportJson={handleImportJson}
-          onJumpToElement={(type, id) => {
+          onJumpToElement={(kind, id) => {
             setView('editor');
-            handleSelectElement(type, id);
+            handleSelectElement(kind, id);
           }}
+          onUploadIpercExcel={handleUploadIpercExcel}
+          onExportIpercExcel={handleExportIpercExcel}
+          onApplyIpercToMap={handleApplyIpercToMap}
         />
       )}
 

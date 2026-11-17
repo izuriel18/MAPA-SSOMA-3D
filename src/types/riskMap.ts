@@ -17,6 +17,10 @@ export type RiskCategory =
 
 export type RiskLevel = 'Bajo' | 'Moderado' | 'Alto' | 'Crítico';
 
+export type MapViewMode = 'all' | 'risks' | 'evacuacion';
+
+export type ExportFormat = 'png' | 'jpg' | 'pdf';
+
 export interface IsoSymbolDef {
   id: string;
   code: string;
@@ -26,6 +30,7 @@ export interface IsoSymbolDef {
   defaultProbability: number;
   defaultSeverity: number;
   description: string;
+  standardRef?: string; // e.g. "NTP 399.010-1", "ISO 7010", "NTP 350.043-1"
 }
 
 export interface MapMarker {
@@ -39,7 +44,7 @@ export interface MapMarker {
   probability: number; // 1-5
   severity: number; // 1-5
   notes: string;
-  source?: 'manual' | 'ai';
+  source?: 'manual' | 'ai' | 'iperc';
 }
 
 export interface RiskZone {
@@ -53,7 +58,12 @@ export interface RiskZone {
   probability: number; // 1-5
   severity: number; // 1-5
   controls: string;
-  source?: 'manual' | 'ai';
+  elimination?: string;
+  substitution?: string;
+  engineering?: string;
+  administrative?: string;
+  epp?: string;
+  source?: 'manual' | 'ai' | 'iperc';
 }
 
 export interface RoutePoint {
@@ -76,6 +86,33 @@ export interface PlanMetadata {
   revision: string;
   date: string;
   scaleText: string;
+  // Campos reglamentarios D.S. 005-2012-TR y R.M. 050-2013-TR (Perú)
+  companyRuc?: string;
+  companyName?: string;
+  facilityAddress?: string;
+  approvalDate?: string;
+  csstRepresentative?: string;
+  headcount?: string;
+  emergencyContact?: string;
+}
+
+export interface IpercRow {
+  id: string;
+  process: string;
+  activity: string;
+  area: string;
+  danger: string; // Peligro
+  risk: string; // Riesgo
+  consequence?: string;
+  probability: number; // 1-5
+  severity: number; // 1-5
+  riskScore: number;
+  riskLevel: RiskLevel;
+  eliminationControl?: string;
+  substitutionControl?: string;
+  engineeringControl?: string;
+  administrativeControl?: string;
+  eppControl?: string;
 }
 
 export interface DxfLayerInfo {

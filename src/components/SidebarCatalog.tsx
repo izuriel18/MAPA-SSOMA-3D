@@ -230,7 +230,7 @@ export const SidebarCatalog: React.FC<SidebarCatalogProps> = ({
       <div className="flex-1 flex flex-col min-h-0 p-4 space-y-2.5">
         <div className="flex items-center justify-between">
           <h2 className="text-xs font-semibold text-slate-900">
-            Pictogramas ISO 7010
+            Señales NTP 399.010-1 / ISO
           </h2>
           <span className="font-mono tabular-nums text-[11px] text-slate-500">
             {filteredSymbols.length}

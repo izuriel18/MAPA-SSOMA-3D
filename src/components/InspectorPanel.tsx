@@ -1,11 +1,15 @@
 import React, { useState } from 'react';
 import {
   Bot,
+  Building2,
   CheckCircle2,
+  FileSpreadsheet,
+  FileText,
   Loader2,
   Send,
   Sliders,
   Trash2,
+  Upload,
 } from 'lucide-react';
 import { getSymbolById, ISO_SYMBOLS } from '../data/isoSymbols';
 import { IsoSymbolIcon } from './IsoSymbolIcon';
@@ -15,15 +19,18 @@ import {
   getRiskColors,
   type AiAnalysisResult,
   type EvacuationRoute,
+  type IpercRow,
   type MapMarker,
   type PlanMetadata,
   type RiskCategory,
   type RiskZone,
 } from '../types/riskMap';
 
+export type InspectorTab = 'ai' | 'properties' | 'cajetin' | 'iperc';
+
 interface InspectorPanelProps {
-  activeTab: 'ai' | 'properties';
-  onTabChange: (tab: 'ai' | 'properties') => void;
+  activeTab: InspectorTab;
+  onTabChange: (tab: InspectorTab) => void;
   metadata: PlanMetadata;
   onUpdateMetadata: (next: PlanMetadata) => void;
   selectedType: 'marker' | 'zone' | 'route' | null;
@@ -42,6 +49,10 @@ interface InspectorPanelProps {
   onRunAiAnalysis: () => void;
   onApplyAiSuggestions: (replaceExisting: boolean) => void;
   onAskAiAdvisor: (question: string) => Promise<string>;
+  // IPERC Excel Integration
+  ipercRows: IpercRow[];
+  onUploadIpercExcel: (file: File) => Promise<void>;
+  onApplyIpercToMap: () => void;
 }
 
 const RISK_CATEGORIES: RiskCategory[] = [
@@ -59,16 +70,18 @@ const FACILITY_TYPES = [
   'Planta Industrial / Maestranza',
   'Almacén Logístico / Bodega',
   'Laboratorio Químico / Farmacéutico',
-  'Planta de Alimentos',
+  'Planta de Alimentos y Bebidas',
   'Oficinas Administrativas / Edificio',
-  'Obra Civil / Construcción',
+  'Obra Civil / Construcción (G.050)',
+  'Operaciones Mineras / Planta Concentradora (D.S. 024-2016-EM)',
   'Taller Automotriz / Mantenimiento',
 ];
 
 const QUICK_AI_PROMPTS = [
-  '¿Cómo limpio mi archivo DWG antes de exportarlo a PDF o DXF?',
-  '¿Cada cuántos metros debo ubicar extintores y salidas?',
-  '¿Qué controles prioritarios recomienda la norma ISO 7010 aquí?',
+  '¿Qué exige la NTP 399.010-1 para la señal "S" de Zona Segura en Sismos?',
+  '¿Cada cuántos metros ubicar extintores PQS y CO2 según NTP 350.043-1?',
+  '¿Cuáles son los requisitos de exhibición del Mapa de Riesgos ante SUNAFIL (D.S. 005-2012-TR)?',
+  '¿Cómo dimensionar puertas y rutas de escape según RNE Norma A.130?',
 ];
 
 export const InspectorPanel: React.FC<InspectorPanelProps> = ({
@@ -92,11 +105,16 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
   onRunAiAnalysis,
   onApplyAiSuggestions,
   onAskAiAdvisor,
+  ipercRows,
+  onUploadIpercExcel,
+  onApplyIpercToMap,
 }) => {
   const [question, setQuestion] = useState('');
   const [advisorReply, setAdvisorReply] = useState<string | null>(null);
   const [isAskingAdvisor, setIsAskingAdvisor] = useState(false);
   const [advisorError, setAdvisorError] = useState<string | null>(null);
+  const [isUploadingExcel, setIsUploadingExcel] = useState(false);
+  const [excelMsg, setExcelMsg] = useState<string | null>(null);
 
   const handleAsk = async (q: string) => {
     const trimmed = q.trim();
@@ -108,69 +126,117 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
       setAdvisorReply(answer);
       setQuestion('');
     } catch (err) {
-      setAdvisorError(err instanceof Error ? err.message : 'Error consultando al asistente.');
+      setAdvisorError(
+        err instanceof Error ? err.message : 'Error al consultar al asistente IA.'
+      );
     } finally {
       setIsAskingAdvisor(false);
     }
   };
 
+  const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingExcel(true);
+    setExcelMsg(null);
+    try {
+      await onUploadIpercExcel(file);
+      setExcelMsg(`¡Matriz IPERC cargada con éxito!`);
+    } catch (err) {
+      setExcelMsg(err instanceof Error ? err.message : 'Error al procesar el Excel.');
+    } finally {
+      setIsUploadingExcel(false);
+      e.target.value = '';
+    }
+  };
+
   return (
-    <aside className="w-[340px] shrink-0 bg-white border-l border-slate-200 flex flex-col h-full overflow-hidden">
-      {/* Segmented Inspector Tabs */}
-      <div className="p-3 border-b border-slate-200">
-        <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-lg">
-          <button
-            type="button"
-            onClick={() => onTabChange('ai')}
-            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
-              activeTab === 'ai'
-                ? 'bg-white text-slate-900 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Bot className="w-3.5 h-3.5" />
-            Asistente IA
-          </button>
-          <button
-            type="button"
-            onClick={() => onTabChange('properties')}
-            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
-              activeTab === 'properties'
-                ? 'bg-white text-slate-900 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Sliders className="w-3.5 h-3.5" />
-            {selectedType ? 'Elemento' : 'Cajetín'}
-          </button>
-        </div>
+    <aside className="w-[330px] shrink-0 bg-white border-l border-slate-200 flex flex-col h-full overflow-hidden">
+      {/* Tab Navigation */}
+      <div className="grid grid-cols-4 border-b border-slate-200 text-xs font-semibold text-slate-600 bg-slate-50">
+        <button
+          type="button"
+          onClick={() => onTabChange('ai')}
+          className={`py-2.5 px-1 inline-flex items-center justify-center gap-1 border-b-2 transition-colors ${
+            activeTab === 'ai'
+              ? 'border-blue-600 text-blue-600 bg-white'
+              : 'border-transparent hover:text-slate-900'
+          }`}
+          title="Asistente de IA y Visión en Planos"
+        >
+          <Bot className="w-3.5 h-3.5" />
+          <span>IA SST</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onTabChange('iperc')}
+          className={`py-2.5 px-1 inline-flex items-center justify-center gap-1 border-b-2 transition-colors ${
+            activeTab === 'iperc'
+              ? 'border-emerald-600 text-emerald-600 bg-white'
+              : 'border-transparent hover:text-slate-900'
+          }`}
+          title="Ingesta de Matriz IPERC en Excel"
+        >
+          <FileSpreadsheet className="w-3.5 h-3.5" />
+          <span>IPERC</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onTabChange('cajetin')}
+          className={`py-2.5 px-1 inline-flex items-center justify-center gap-1 border-b-2 transition-colors ${
+            activeTab === 'cajetin'
+              ? 'border-indigo-600 text-indigo-600 bg-white'
+              : 'border-transparent hover:text-slate-900'
+          }`}
+          title="Cajetín Legal Oficial (SGSST Perú)"
+        >
+          <Building2 className="w-3.5 h-3.5" />
+          <span>Cajetín</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onTabChange('properties')}
+          className={`py-2.5 px-1 inline-flex items-center justify-center gap-1 border-b-2 transition-colors ${
+            activeTab === 'properties'
+              ? 'border-slate-900 text-slate-900 bg-white'
+              : 'border-transparent hover:text-slate-900'
+          }`}
+          title="Propiedades del elemento seleccionado"
+        >
+          <Sliders className="w-3.5 h-3.5" />
+          <span>Prop.</span>
+        </button>
       </div>
 
-      {/* Scrollable Body */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-5">
-        {activeTab === 'ai' ? (
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* ========================================================= */}
+        {/* TAB 1: ASISTENTE IA & VISIÓN */}
+        {/* ========================================================= */}
+        {activeTab === 'ai' && (
           <>
-            {/* Context Config for AI */}
             <div className="space-y-3">
               <div>
                 <h3 className="text-xs font-semibold text-slate-900">
-                  Análisis Automático del Plano
+                  Análisis Multimodal con Gemini 2.5
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                  La IA inspecciona la geometría del plano para proponer zonas IPER, pictogramas ISO 7010 y rutas de evacuación.
+                  Examina el plano cargado, reconoce las áreas y propone Zonas IPER, Señalética NTP 399.010-1 y Rutas de Escape.
                 </p>
               </div>
 
               <div className="space-y-2">
                 <label className="block text-[11px] font-medium text-slate-600">
-                  Tipo de instalación
+                  Tipo de Instalación
                 </label>
                 <select
                   value={metadata.facilityType}
                   onChange={(e) =>
                     onUpdateMetadata({ ...metadata, facilityType: e.target.value })
                   }
-                  className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-md focus:outline-none focus:border-blue-500"
+                  className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-md"
                 >
                   {FACILITY_TYPES.map((t) => (
                     <option key={t} value={t}>
@@ -180,34 +246,16 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                 </select>
               </div>
 
-              <div className="space-y-2">
-                <label className="block text-[11px] font-medium text-slate-600">
-                  Normativa de señalización
-                </label>
-                <select
-                  value={metadata.standard}
-                  onChange={(e) =>
-                    onUpdateMetadata({ ...metadata, standard: e.target.value })
-                  }
-                  className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-md focus:outline-none focus:border-blue-500"
-                >
-                  <option value="ISO 7010 / NTP 399.010-1">ISO 7010 / NTP 399.010-1</option>
-                  <option value="NOM-026-STPS / ISO 7010">NOM-026-STPS (México)</option>
-                  <option value="OSHA / ANSI Z535 / NFPA">OSHA / ANSI Z535 / NFPA</option>
-                  <option value="UNE-EN ISO 7010">UNE-EN ISO 7010 (Europa)</option>
-                </select>
-              </div>
-
               <button
                 type="button"
                 disabled={isAnalyzing}
                 onClick={onRunAiAnalysis}
-                className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-xs font-semibold rounded-lg transition-colors"
+                className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-xs font-semibold rounded-lg transition-colors shadow-xs"
               >
                 {isAnalyzing ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Analizando plano...
+                    Analizando Plano con Gemini...
                   </>
                 ) : (
                   <>
@@ -232,7 +280,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                     Propuesta generada
                   </span>
                   <span className="font-mono tabular-nums text-[11px] text-slate-500">
-                    {aiResult.zones.length} zonas · {aiResult.markers.length} símbolos · {aiResult.evacuationRoutes.length} rutas
+                    {aiResult.zones.length} zonas · {aiResult.markers.length} señales · {aiResult.evacuationRoutes.length} rutas
                   </span>
                 </div>
 
@@ -261,7 +309,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                 {aiResult.cadTips.length > 0 && (
                   <div className="space-y-1.5">
                     <h4 className="text-[11px] font-semibold text-slate-700">
-                      Observaciones técnicas de plano y campo
+                      Observaciones Técnicas y de Campo
                     </h4>
                     <ul className="space-y-1 text-xs text-slate-600 list-disc pl-4">
                       {aiResult.cadTips.map((tip, i) => (
@@ -278,7 +326,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
             {/* Contextual SST & CAD Q&A */}
             <div className="pt-4 border-t border-slate-200 space-y-3">
               <h3 className="text-xs font-semibold text-slate-900">
-                Consultor SST y Preparación DWG/PDF
+                Consultor Legal SST (Perú) y CAD
               </h3>
 
               <div className="space-y-1.5">
@@ -306,7 +354,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                   type="text"
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
-                  placeholder="Pregunta sobre normativa o CAD..."
+                  placeholder="Pregunta sobre Ley 29783 o NTP..."
                   className="flex-1 px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:border-blue-500"
                 />
                 <button
@@ -330,14 +378,303 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
               )}
 
               {advisorReply && (
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-xs text-slate-700 whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">
                   {advisorReply}
                 </div>
               )}
             </div>
           </>
-        ) : (
-          /* PROPERTIES TAB */
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 2: INGESTA DE MATRIZ IPERC EN EXCEL */}
+        {/* ========================================================= */}
+        {activeTab === 'iperc' && (
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-xs font-semibold text-slate-900">
+                Matriz IPERC de la Empresa (Excel)
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                Sube el archivo Excel de tu IPERC (.xlsx, .csv). El sistema identificará las áreas, procesos y peligros para plasmarlos en el Mapa de Riesgos.
+              </p>
+            </div>
+
+            <div className="p-3 bg-emerald-50/60 border border-emerald-200 rounded-lg space-y-3">
+              <label className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold rounded-md cursor-pointer transition-colors shadow-xs">
+                {isUploadingExcel ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Upload className="w-3.5 h-3.5" />
+                )}
+                <span>Subir Matriz Excel (.xlsx / .csv)</span>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="hidden"
+                  onChange={handleExcelUpload}
+                  disabled={isUploadingExcel}
+                />
+              </label>
+
+              {excelMsg && (
+                <div className="text-[11px] text-emerald-800 font-medium">
+                  {excelMsg}
+                </div>
+              )}
+
+              <div className="text-[11px] text-slate-600 space-y-1">
+                <div>
+                  <strong>Registros cargados:</strong>{' '}
+                  <span className="font-mono font-bold text-slate-900">{ipercRows.length}</span> peligros
+                </div>
+                {ipercRows.length > 0 && (
+                  <div>
+                    <strong>Áreas identificadas:</strong>{' '}
+                    {Array.from(new Set(ipercRows.map((r) => r.area))).slice(0, 5).join(', ')}
+                    {Array.from(new Set(ipercRows.map((r) => r.area))).length > 5 && '...'}
+                  </div>
+                )}
+              </div>
+
+              {ipercRows.length > 0 && (
+                <button
+                  type="button"
+                  onClick={onApplyIpercToMap}
+                  className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-900 text-xs font-semibold rounded-md transition-colors"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  Sincronizar Peligros al Mapa
+                </button>
+              )}
+            </div>
+
+            {ipercRows.length > 0 ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs font-semibold text-slate-900">
+                  <span>Peligros del IPERC ({ipercRows.length})</span>
+                </div>
+                <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
+                  {ipercRows.slice(0, 15).map((row) => (
+                    <div
+                      key={row.id}
+                      className="p-2 bg-slate-50 border border-slate-200 rounded-md text-xs space-y-1"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-slate-900 truncate max-w-[170px]">
+                          {row.area}
+                        </span>
+                        <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-800">
+                          {row.riskLevel} ({row.riskScore})
+                        </span>
+                      </div>
+                      <div className="text-slate-700 text-[11px] truncate">
+                        ⚠️ {row.danger}
+                      </div>
+                      <div className="text-slate-500 text-[10px] truncate">
+                        ⚡ {row.risk}
+                      </div>
+                    </div>
+                  ))}
+                  {ipercRows.length > 15 && (
+                    <div className="text-center text-[11px] text-slate-500 py-1">
+                      y {ipercRows.length - 15} registros más en la pestaña Matriz IPER.
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-xs text-slate-500 leading-relaxed text-center">
+                Sube tu matriz IPERC para vincular automáticamente los peligros y controles de tu empresa con el plano arquitectónico.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 3: CAJETÍN OFICIAL SGSST PERÚ */}
+        {/* ========================================================= */}
+        {activeTab === 'cajetin' && (
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-xs font-semibold text-slate-900">
+                Cajetín Técnico Legal (D.S. 005-2012-TR)
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                Información obligatoria del Sistema de Gestión de SST y del Plan de Evacuación exigida por SUNAFIL e INDECI.
+              </p>
+            </div>
+
+            <div className="space-y-2.5">
+              <div className="space-y-1">
+                <label className="block text-[11px] font-medium text-slate-600">
+                  Razón Social de la Empresa
+                </label>
+                <input
+                  type="text"
+                  value={metadata.companyName || ''}
+                  placeholder="Ej. Industrias del Perú S.A.C."
+                  onChange={(e) =>
+                    onUpdateMetadata({ ...metadata, companyName: e.target.value })
+                  }
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-medium text-slate-600">
+                    RUC
+                  </label>
+                  <input
+                    type="text"
+                    value={metadata.companyRuc || ''}
+                    placeholder="20123456789"
+                    maxLength={11}
+                    onChange={(e) =>
+                      onUpdateMetadata({ ...metadata, companyRuc: e.target.value })
+                    }
+                    className="w-full px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-md"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-medium text-slate-600">
+                    Aforo Máximo
+                  </label>
+                  <input
+                    type="text"
+                    value={metadata.headcount || ''}
+                    placeholder="Ej. 65 pers."
+                    onChange={(e) =>
+                      onUpdateMetadata({ ...metadata, headcount: e.target.value })
+                    }
+                    className="w-full px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-md"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[11px] font-medium text-slate-600">
+                  Sede / Planta / Instalación
+                </label>
+                <input
+                  type="text"
+                  value={metadata.facilityName}
+                  onChange={(e) =>
+                    onUpdateMetadata({ ...metadata, facilityName: e.target.value })
+                  }
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[11px] font-medium text-slate-600">
+                  Dirección de la Sede
+                </label>
+                <input
+                  type="text"
+                  value={metadata.facilityAddress || ''}
+                  placeholder="Av. Principal 123, Lima"
+                  onChange={(e) =>
+                    onUpdateMetadata({ ...metadata, facilityAddress: e.target.value })
+                  }
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[11px] font-medium text-slate-600">
+                  Aprobación Comité de SST (CSST / Supervisor)
+                </label>
+                <input
+                  type="text"
+                  value={metadata.csstRepresentative || ''}
+                  placeholder="Comité Paritario de SST"
+                  onChange={(e) =>
+                    onUpdateMetadata({ ...metadata, csstRepresentative: e.target.value })
+                  }
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[11px] font-medium text-slate-600">
+                  Responsable de Elaboración / SST
+                </label>
+                <input
+                  type="text"
+                  value={metadata.author}
+                  onChange={(e) =>
+                    onUpdateMetadata({ ...metadata, author: e.target.value })
+                  }
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[11px] font-medium text-slate-600">
+                  Central / Teléfono de Emergencias
+                </label>
+                <input
+                  type="text"
+                  value={metadata.emergencyContact || ''}
+                  placeholder="(01) 619-0000 / Bomberos 116"
+                  onChange={(e) =>
+                    onUpdateMetadata({ ...metadata, emergencyContact: e.target.value })
+                  }
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-medium text-slate-600">
+                    Escala
+                  </label>
+                  <input
+                    type="text"
+                    value={metadata.scaleText}
+                    onChange={(e) =>
+                      onUpdateMetadata({ ...metadata, scaleText: e.target.value })
+                    }
+                    className="w-full px-2 py-1 text-xs font-mono border border-slate-200 rounded-md"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-medium text-slate-600">
+                    Revisión
+                  </label>
+                  <input
+                    type="text"
+                    value={metadata.revision}
+                    onChange={(e) =>
+                      onUpdateMetadata({ ...metadata, revision: e.target.value })
+                    }
+                    className="w-full px-2 py-1 text-xs font-mono border border-slate-200 rounded-md"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-medium text-slate-600">
+                    Fecha
+                  </label>
+                  <input
+                    type="date"
+                    value={metadata.date}
+                    onChange={(e) =>
+                      onUpdateMetadata({ ...metadata, date: e.target.value })
+                    }
+                    className="w-full px-1.5 py-1 text-xs font-mono border border-slate-200 rounded-md"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 4: PROPIEDADES DEL ELEMENTO SELECCIONADO */}
+        {/* ========================================================= */}
+        {activeTab === 'properties' && (
           <>
             {selectedType === 'marker' && selectedMarker && (
               <div className="space-y-4">
@@ -348,8 +685,8 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                       <div className="text-xs font-semibold text-slate-900">
                         {getSymbolById(selectedMarker.symbolId).code}
                       </div>
-                      <div className="text-[11px] font-mono tabular-nums text-slate-500">
-                        X:{selectedMarker.x} · Y:{selectedMarker.y}
+                      <div className="text-[11px] text-slate-500">
+                        {getSymbolById(selectedMarker.symbolId).name}
                       </div>
                     </div>
                   </div>
@@ -365,18 +702,25 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
 
                 <div className="space-y-2">
                   <label className="block text-[11px] font-medium text-slate-600">
-                    Tipo de Pictograma ISO 7010
+                    Cambiar Símbolo
                   </label>
                   <select
                     value={selectedMarker.symbolId}
-                    onChange={(e) =>
-                      onUpdateMarker({ ...selectedMarker, symbolId: e.target.value })
-                    }
+                    onChange={(e) => {
+                      const def = getSymbolById(e.target.value);
+                      onUpdateMarker({
+                        ...selectedMarker,
+                        symbolId: def.id,
+                        label: def.name,
+                        riskCategory: def.defaultRiskCategory,
+                        notes: def.description,
+                      });
+                    }}
                     className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-md"
                   >
                     {ISO_SYMBOLS.map((s) => (
                       <option key={s.id} value={s.id}>
-                        {s.code} — {s.name}
+                        {s.code} · {s.name}
                       </option>
                     ))}
                   </select>
@@ -384,7 +728,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
 
                 <div className="space-y-2">
                   <label className="block text-[11px] font-medium text-slate-600">
-                    Etiqueta / Riesgo Identificado
+                    Etiqueta / Descripción
                   </label>
                   <input
                     type="text"
@@ -396,44 +740,42 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <label className="block text-[11px] font-medium text-slate-600">
-                      Área / Zona
-                    </label>
-                    <input
-                      type="text"
-                      value={selectedMarker.zoneName}
-                      onChange={(e) =>
-                        onUpdateMarker({ ...selectedMarker, zoneName: e.target.value })
-                      }
-                      className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="block text-[11px] font-medium text-slate-600">
-                      Categoría
-                    </label>
-                    <select
-                      value={selectedMarker.riskCategory}
-                      onChange={(e) =>
-                        onUpdateMarker({
-                          ...selectedMarker,
-                          riskCategory: e.target.value as RiskCategory,
-                        })
-                      }
-                      className="w-full px-2 py-1.5 text-xs bg-white border border-slate-200 rounded-md"
-                    >
-                      {RISK_CATEGORIES.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                <div className="space-y-2">
+                  <label className="block text-[11px] font-medium text-slate-600">
+                    Ambiente / Zona de Ubicación
+                  </label>
+                  <input
+                    type="text"
+                    value={selectedMarker.zoneName}
+                    onChange={(e) =>
+                      onUpdateMarker({ ...selectedMarker, zoneName: e.target.value })
+                    }
+                    className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md"
+                  />
                 </div>
 
-                {/* Probability & Severity Sliders */}
+                <div className="space-y-2">
+                  <label className="block text-[11px] font-medium text-slate-600">
+                    Categoría de Riesgo IPER
+                  </label>
+                  <select
+                    value={selectedMarker.riskCategory}
+                    onChange={(e) =>
+                      onUpdateMarker({
+                        ...selectedMarker,
+                        riskCategory: e.target.value as RiskCategory,
+                      })
+                    }
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-md"
+                  >
+                    {RISK_CATEGORIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <IperScoreInputs
                   probability={selectedMarker.probability}
                   severity={selectedMarker.severity}
@@ -444,7 +786,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
 
                 <div className="space-y-1">
                   <label className="block text-[11px] font-medium text-slate-600">
-                    Controles / Notas de campo
+                    Notas Técnicas / Medidas de Control
                   </label>
                   <textarea
                     rows={3}
@@ -463,10 +805,10 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                 <div className="flex items-center justify-between pb-3 border-b border-slate-200">
                   <div>
                     <div className="text-xs font-semibold text-slate-900">
-                      Zona de Riesgo IPER
+                      Zona IPER Delimitada
                     </div>
                     <div className="text-[11px] font-mono tabular-nums text-slate-500">
-                      {selectedZone.width}×{selectedZone.height} u.
+                      {selectedZone.name}
                     </div>
                   </div>
                   <button
@@ -481,7 +823,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
 
                 <div className="space-y-2">
                   <label className="block text-[11px] font-medium text-slate-600">
-                    Nombre de la Zona
+                    Nombre del Área / Proceso
                   </label>
                   <input
                     type="text"
@@ -495,7 +837,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
 
                 <div className="space-y-2">
                   <label className="block text-[11px] font-medium text-slate-600">
-                    Categoría de Riesgo Principal
+                    Peligro Principal (Categoría)
                   </label>
                   <select
                     value={selectedZone.riskCategory}
@@ -525,7 +867,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
 
                 <div className="space-y-1">
                   <label className="block text-[11px] font-medium text-slate-600">
-                    Medidas de Control (Jerarquía IPER)
+                    Medidas de Control (Jerarquía de Controles Ley 29783)
                   </label>
                   <textarea
                     rows={3}
@@ -577,86 +919,8 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
             )}
 
             {!selectedType && (
-              <div className="space-y-3">
-                <div>
-                  <h3 className="text-xs font-semibold text-slate-900">
-                    Cajetín Técnico del Plano
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Estos datos aparecen en el rótulo inferior al exportar el Mapa de Riesgos en PNG.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-[11px] font-medium text-slate-600">
-                    Empresa / Planta / Sede
-                  </label>
-                  <input
-                    type="text"
-                    value={metadata.facilityName}
-                    onChange={(e) =>
-                      onUpdateMetadata({ ...metadata, facilityName: e.target.value })
-                    }
-                    className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-[11px] font-medium text-slate-600">
-                    Responsable SST / Prevencionista
-                  </label>
-                  <input
-                    type="text"
-                    value={metadata.author}
-                    onChange={(e) =>
-                      onUpdateMetadata({ ...metadata, author: e.target.value })
-                    }
-                    className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <label className="block text-[11px] font-medium text-slate-600">
-                      Escala
-                    </label>
-                    <input
-                      type="text"
-                      value={metadata.scaleText}
-                      onChange={(e) =>
-                        onUpdateMetadata({ ...metadata, scaleText: e.target.value })
-                      }
-                      className="w-full px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-md"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="block text-[11px] font-medium text-slate-600">
-                      Revisión
-                    </label>
-                    <input
-                      type="text"
-                      value={metadata.revision}
-                      onChange={(e) =>
-                        onUpdateMetadata({ ...metadata, revision: e.target.value })
-                      }
-                      className="w-full px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-md"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="block text-[11px] font-medium text-slate-600">
-                    Fecha de Emisión
-                  </label>
-                  <input
-                    type="date"
-                    value={metadata.date}
-                    onChange={(e) =>
-                      onUpdateMetadata({ ...metadata, date: e.target.value })
-                    }
-                    className="w-full px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-md"
-                  />
-                </div>
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-600 text-center leading-relaxed">
+                Selecciona cualquier pictograma, zona de riesgo o ruta en el plano para editar sus propiedades técnicas.
               </div>
             )}
           </>
@@ -696,11 +960,11 @@ const IperScoreInputs: React.FC<{
             onChange={(e) => onChange(Number(e.target.value), severity)}
             className="w-full px-2 py-1 text-xs font-mono bg-white border border-slate-200 rounded"
           >
-            <option value={1}>1 · Rara</option>
-            <option value={2}>2 · Baja</option>
-            <option value={3}>3 · Media</option>
-            <option value={4}>4 · Probable</option>
-            <option value={5}>5 · Frecuente</option>
+            <option value={1}>1 · Rara (Frecuencia mínima)</option>
+            <option value={2}>2 · Baja (Ocasional)</option>
+            <option value={3}>3 · Media (Moderada)</option>
+            <option value={4}>4 · Probable (Frecuente)</option>
+            <option value={5}>5 · Casi Segura (Constante)</option>
           </select>
         </div>
         <div>
@@ -712,11 +976,11 @@ const IperScoreInputs: React.FC<{
             onChange={(e) => onChange(probability, Number(e.target.value))}
             className="w-full px-2 py-1 text-xs font-mono bg-white border border-slate-200 rounded"
           >
-            <option value={1}>1 · Leve</option>
-            <option value={2}>2 · Menor</option>
-            <option value={3}>3 · Moderada</option>
-            <option value={4}>4 · Grave</option>
-            <option value={5}>5 · Catastrófica</option>
+            <option value={1}>1 · Leve (Sin descanso médico)</option>
+            <option value={2}>2 · Menor (Primeros auxilios)</option>
+            <option value={3}>3 · Moderada (Incapacidad temporal)</option>
+            <option value={4}>4 · Grave (Incapacidad permanente)</option>
+            <option value={5}>5 · Catastrófica (Mortalidad múltiple)</option>
           </select>
         </div>
       </div>

@@ -1,15 +1,19 @@
 import React, { useRef, useState } from 'react';
 import {
   Check,
+  Compass,
+  Eye,
   Maximize2,
   MousePointer,
   Plus,
   Route,
+  ShieldAlert,
   Square,
   X,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
+import { getSymbolById } from '../data/isoSymbols';
 import { IsoSymbolIcon } from './IsoSymbolIcon';
 import {
   classifyRiskLevel,
@@ -19,6 +23,7 @@ import {
   type CanvasToolMode,
   type EvacuationRoute,
   type MapMarker,
+  type MapViewMode,
   type RiskZone,
   type RoutePoint,
 } from '../types/riskMap';
@@ -28,6 +33,8 @@ interface BlueprintCanvasProps {
   zones: RiskZone[];
   markers: MapMarker[];
   routes: EvacuationRoute[];
+  viewMode: MapViewMode;
+  onSetViewMode: (mode: MapViewMode) => void;
   toolMode: CanvasToolMode;
   activeSymbolId: string;
   selectedId: string | null;
@@ -51,6 +58,8 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
   zones,
   markers,
   routes,
+  viewMode,
+  onSetViewMode,
   toolMode,
   activeSymbolId,
   selectedId,
@@ -85,6 +94,22 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
   const aspect = (blueprint.height || 1000) / (blueprint.width || 1600);
   const baseRenderWidth = 960;
   const baseRenderHeight = Math.round(baseRenderWidth * aspect);
+
+  const isMarkerVisible = (symbolId: string) => {
+    if (!layerVisibility.markers) return false;
+    if (viewMode === 'all') return true;
+    const def = getSymbolById(symbolId);
+    if (viewMode === 'risks') {
+      return def.category === 'advertencia' || def.category === 'obligacion' || def.category === 'prohibicion';
+    }
+    if (viewMode === 'evacuacion') {
+      return def.category === 'evacuacion' || def.category === 'incendios';
+    }
+    return true;
+  };
+
+  const isZoneLayerVisible = layerVisibility.zones && viewMode !== 'evacuacion';
+  const isRouteLayerVisible = layerVisibility.routes && viewMode !== 'risks';
 
   const clientToNormalized = (clientX: number, clientY: number): { x: number; y: number } | null => {
     const el = sheetRef.current;
@@ -204,7 +229,51 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
   return (
     <div className="relative flex flex-col h-full bg-slate-100 select-none overflow-hidden">
       {/* Canvas Floating Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-white border-b border-slate-200 z-10">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2 bg-white border-b border-slate-200 z-10">
+        {/* View Mode Selector (Perú Oficial: Riesgos vs. Evacuación) */}
+        <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+          <button
+            type="button"
+            onClick={() => onSetViewMode('risks')}
+            title="Mostrar solo Peligros, Zonas IPER y EPP (Ley 29783 / R.M. 050)"
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+              viewMode === 'risks'
+                ? 'bg-amber-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <ShieldAlert className="w-3.5 h-3.5" />
+            Mapa de Riesgos (SST)
+          </button>
+          <button
+            type="button"
+            onClick={() => onSetViewMode('evacuacion')}
+            title="Mostrar Rutas de Evacuación, Salidas, Sismos S y Extintores (INDECI / RNE A.130)"
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+              viewMode === 'evacuacion'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Compass className="w-3.5 h-3.5" />
+            Mapa de Evacuación (INDECI)
+          </button>
+          <button
+            type="button"
+            onClick={() => onSetViewMode('all')}
+            title="Mostrar todos los elementos"
+            className={`inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              viewMode === 'all'
+                ? 'bg-slate-900 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Eye className="w-3.5 h-3.5" />
+            Completo
+          </button>
+        </div>
+
+        {/* Drafting Tool Buttons */}
         <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
           <button
             type="button"
@@ -219,7 +288,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
             }`}
           >
             <MousePointer className="w-3.5 h-3.5" />
-            Seleccionar / Mover
+            Seleccionar
           </button>
           <button
             type="button"
@@ -234,7 +303,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
             }`}
           >
             <Plus className="w-3.5 h-3.5" />
-            Colocar Pictograma
+            Pictograma
           </button>
           <button
             type="button"
@@ -249,7 +318,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
             }`}
           >
             <Square className="w-3.5 h-3.5" />
-            Dibujar Zona IPER
+            Zona IPER
           </button>
           <button
             type="button"
@@ -400,7 +469,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
             </defs>
 
             {/* Zones */}
-            {layerVisibility.zones &&
+            {isZoneLayerVisible &&
               zones.map((zone) => {
                 const score = computeRiskScore(zone.probability, zone.severity);
                 const level = classifyRiskLevel(score);
@@ -445,7 +514,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
             )}
 
             {/* Evacuation Routes */}
-            {layerVisibility.routes &&
+            {isRouteLayerVisible &&
               routes.map((route) => {
                 if (route.points.length < 2) return null;
                 const ptsStr = route.points.map((p) => `${p.x},${p.y}`).join(' ');
@@ -499,7 +568,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
           </svg>
 
           {/* Zone Labels Overlay */}
-          {layerVisibility.zones &&
+          {isZoneLayerVisible &&
             zones.map((zone) => {
               const score = computeRiskScore(zone.probability, zone.severity);
               const level = classifyRiskLevel(score);
@@ -531,43 +600,42 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
               );
             })}
 
-          {/* Interactive ISO 7010 Markers */}
-          {layerVisibility.markers &&
-            markers.map((marker, idx) => {
-              const isSelected = selectedType === 'marker' && selectedId === marker.id;
-              return (
+          {/* Interactive ISO / NTP Markers */}
+          {markers.filter((m) => isMarkerVisible(m.symbolId)).map((marker, idx) => {
+            const isSelected = selectedType === 'marker' && selectedId === marker.id;
+            return (
+              <div
+                key={marker.id}
+                style={{
+                  left: `${marker.x / 10}%`,
+                  top: `${marker.y / 10}%`,
+                }}
+                onMouseDown={(e) => {
+                  if (toolMode !== 'select') return;
+                  e.stopPropagation();
+                  onSelectElement('marker', marker.id);
+                  setDraggingMarkerId(marker.id);
+                }}
+                title={`${marker.label} (${marker.zoneName})`}
+                className={`absolute -translate-x-1/2 -translate-y-1/2 group ${
+                  toolMode === 'select' ? 'cursor-move' : 'pointer-events-none'
+                }`}
+              >
                 <div
-                  key={marker.id}
-                  style={{
-                    left: `${marker.x / 10}%`,
-                    top: `${marker.y / 10}%`,
-                  }}
-                  onMouseDown={(e) => {
-                    if (toolMode !== 'select') return;
-                    e.stopPropagation();
-                    onSelectElement('marker', marker.id);
-                    setDraggingMarkerId(marker.id);
-                  }}
-                  title={`${marker.label} (${marker.zoneName})`}
-                  className={`absolute -translate-x-1/2 -translate-y-1/2 group ${
-                    toolMode === 'select' ? 'cursor-move' : 'pointer-events-none'
+                  className={`relative p-0.5 rounded-full bg-white/90 shadow-sm transition-transform ${
+                    isSelected
+                      ? 'ring-2 ring-blue-600 scale-115'
+                      : 'hover:scale-110'
                   }`}
                 >
-                  <div
-                    className={`relative p-0.5 rounded-full bg-white/90 shadow-sm transition-transform ${
-                      isSelected
-                        ? 'ring-2 ring-blue-600 scale-115'
-                        : 'hover:scale-110'
-                    }`}
-                  >
-                    <IsoSymbolIcon symbolId={marker.symbolId} size={28} />
-                    <span className="absolute -top-1.5 -right-1.5 px-1 min-w-[16px] h-4 flex items-center justify-center rounded bg-slate-900 text-white font-mono tabular-nums text-[9px] font-semibold">
-                      {idx + 1}
-                    </span>
-                  </div>
+                  <IsoSymbolIcon symbolId={marker.symbolId} size={28} />
+                  <span className="absolute -top-1.5 -right-1.5 px-1 min-w-[16px] h-4 flex items-center justify-center rounded bg-slate-900 text-white font-mono tabular-nums text-[9px] font-semibold">
+                    {idx + 1}
+                  </span>
                 </div>
-              );
-            })}
+              </div>
+            );
+          })}
         </div>
 
         {/* Bottom-left Coordinate & File Info Readout */}
