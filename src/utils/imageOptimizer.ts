@@ -67,3 +67,4 @@ export async function optimizeImageForAi(
     img.src = dataUrl;
   });
 }
+
