@@ -58,6 +58,7 @@ interface BlueprintCanvasProps {
   onUpdateMarker?: (marker: MapMarker) => void;
   onDeleteZone?: (id: string) => void;
   onDeleteRoute?: (id: string) => void;
+  onUpdateRoute?: (route: EvacuationRoute) => void;
 }
 
 export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
@@ -82,6 +83,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
   onUpdateMarker,
   onDeleteZone,
   onDeleteRoute,
+  onUpdateRoute,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -101,6 +103,12 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
 
   // Dragging existing marker
   const [draggingMarkerId, setDraggingMarkerId] = useState<string | null>(null);
+
+  // Dragging existing route waypoint
+  const [draggingRoutePoint, setDraggingRoutePoint] = useState<{
+    routeId: string;
+    pointIndex: number;
+  } | null>(null);
 
   // Marker size & badge controls
   const [markerSizeChoice, setMarkerSizeChoice] = useState<'S' | 'M' | 'L'>('M');
@@ -128,6 +136,14 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
     }
     const nextRot = ((m.rotation || 0) + 180) % 360;
     onUpdateMarker({ ...m, symbolId: nextId, label: nextLabel, rotation: nextRot });
+  };
+
+  const handleInvertRoute = (r: EvacuationRoute) => {
+    if (!onUpdateRoute) return;
+    onUpdateRoute({
+      ...r,
+      points: [...r.points].reverse(),
+    });
   };
 
   // Keyboard Shortcuts (Delete, R to rotate, Arrow keys to nudge, Escape to deselect)
@@ -274,6 +290,17 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
       return;
     }
 
+    if (draggingRoutePoint && pt && onUpdateRoute) {
+      const targetRoute = routes.find((r) => r.id === draggingRoutePoint.routeId);
+      if (targetRoute) {
+        const nextPoints = targetRoute.points.map((p, idx) =>
+          idx === draggingRoutePoint.pointIndex ? { x: pt.x, y: pt.y } : p
+        );
+        onUpdateRoute({ ...targetRoute, points: nextPoints });
+      }
+      return;
+    }
+
     if (draggingMarkerId && pt) {
       onMoveMarker(draggingMarkerId, pt.x, pt.y);
       return;
@@ -287,6 +314,9 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
   const handleViewportMouseUp = () => {
     if (isPanning) {
       setIsPanning(false);
+    }
+    if (draggingRoutePoint) {
+      setDraggingRoutePoint(null);
     }
     if (draggingMarkerId) {
       setDraggingMarkerId(null);
@@ -654,23 +684,67 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
                 const ptsStr = route.points.map((p) => `${p.x},${p.y}`).join(' ');
                 const isSelected = selectedType === 'route' && selectedId === route.id;
                 return (
-                  <polyline
-                    key={route.id}
-                    points={ptsStr}
-                    fill="none"
-                    stroke={isSelected ? '#0F172A' : '#16A34A'}
-                    strokeWidth={isSelected ? 7 : 5}
-                    strokeDasharray="12 7"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    markerEnd="url(#evac-arrow)"
-                    className="pointer-events-auto cursor-pointer"
-                    onMouseDown={(e) => {
-                      if (toolMode !== 'select') return;
-                      e.stopPropagation();
-                      onSelectElement('route', route.id);
-                    }}
-                  />
+                  <g key={route.id}>
+                    {/* Trazo invisible grueso para facilitar el clic o selección */}
+                    <polyline
+                      points={ptsStr}
+                      fill="none"
+                      stroke="transparent"
+                      strokeWidth={20}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="pointer-events-auto cursor-pointer"
+                      onMouseDown={(e) => {
+                        if (toolMode !== 'select') return;
+                        e.stopPropagation();
+                        onSelectElement('route', route.id);
+                      }}
+                    />
+                    <polyline
+                      points={ptsStr}
+                      fill="none"
+                      stroke={isSelected ? '#0F172A' : '#16A34A'}
+                      strokeWidth={isSelected ? 6.5 : 4.5}
+                      strokeDasharray={isSelected ? 'none' : '12 7'}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      markerEnd="url(#evac-arrow)"
+                      className="pointer-events-none"
+                    />
+                    {/* Vértices / Waypoints interactivos cuando está seleccionada */}
+                    {isSelected &&
+                      route.points.map((pt, ptIdx) => (
+                        <g
+                          key={`handle-${route.id}-${ptIdx}`}
+                          className="pointer-events-auto cursor-grab active:cursor-grabbing"
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            setDraggingRoutePoint({ routeId: route.id, pointIndex: ptIdx });
+                          }}
+                        >
+                          <circle
+                            cx={pt.x}
+                            cy={pt.y}
+                            r="9"
+                            fill="#FFFFFF"
+                            stroke="#16A34A"
+                            strokeWidth="2.5"
+                            className="transition-transform hover:scale-125"
+                          />
+                          <text
+                            x={pt.x}
+                            y={pt.y + 3}
+                            textAnchor="middle"
+                            fontSize="8"
+                            fontWeight="bold"
+                            fill="#15803D"
+                            className="select-none pointer-events-none"
+                          >
+                            {ptIdx + 1}
+                          </text>
+                        </g>
+                      ))}
+                  </g>
                 );
               })}
 
@@ -831,6 +905,60 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
             );
           })}
         </div>
+
+        {/* Floating Quick Action Toolbar for Selected Route */}
+        {selectedType === 'route' && selectedId && routes.some((r) => r.id === selectedId) && (() => {
+          const selRoute = routes.find((r) => r.id === selectedId)!;
+          if (!selRoute.points || selRoute.points.length === 0) return null;
+          const midIndex = Math.floor(selRoute.points.length / 2);
+          const anchorPt = selRoute.points[midIndex] || selRoute.points[0];
+          return (
+            <div
+              style={{
+                left: `${anchorPt.x / 10}%`,
+                top: `${anchorPt.y / 10}%`,
+              }}
+              className="absolute -translate-x-1/2 -translate-y-12 z-20 flex items-center gap-1.5 px-2.5 py-1 bg-slate-900/95 text-white rounded-lg shadow-xl backdrop-blur-xs pointer-events-auto border border-slate-700"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-1 pr-1.5 border-r border-slate-700">
+                <Route className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-[11px] font-semibold text-emerald-300">
+                  {selRoute.name || 'Ruta'}
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  ({selRoute.points.length} pts)
+                </span>
+              </div>
+
+              {onUpdateRoute && (
+                <button
+                  type="button"
+                  onClick={() => handleInvertRoute(selRoute)}
+                  title="Invertir dirección de la ruta (cambiar inicio y final)"
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 hover:bg-slate-700 rounded text-[11px] font-medium text-emerald-300 hover:text-white transition-colors"
+                >
+                  <ArrowLeftRight className="w-3.5 h-3.5" />
+                  <span>Invertir</span>
+                </button>
+              )}
+
+              {onDeleteRoute && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDeleteRoute(selRoute.id);
+                    onSelectElement(null, null);
+                  }}
+                  title="Eliminar ruta de evacuación (Supr / Delete)"
+                  className="p-1 hover:bg-red-600 rounded text-red-300 hover:text-white transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Bottom-left Coordinate & File Info Readout */}
         <div className="absolute bottom-3 left-3 flex items-center gap-3 px-3 py-1.5 bg-white/95 border border-slate-200 rounded-md text-xs text-slate-600 shadow-xs pointer-events-none">

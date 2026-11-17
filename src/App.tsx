@@ -1014,6 +1014,9 @@ export default function App() {
                 setSelectedType(null);
                 setSelectedId(null);
               }}
+              onUpdateRoute={(r) =>
+                setRoutes((prev) => prev.map((item) => (item.id === r.id ? r : item)))
+              }
             />
 
             {/* Botón flotante para reabrir el panel derecho si está oculto */}

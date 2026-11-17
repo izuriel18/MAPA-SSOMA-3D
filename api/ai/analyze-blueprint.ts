@@ -144,7 +144,8 @@ export default async function handler(req: any, res: any) {
     const ai = getAiClient();
 
     const prompt = `Eres un Ingeniero Senior de Seguridad y Salud en el Trabajo (SST / SSOMA) especializado en Mapas de Riesgos y Planes de Evacuación industriales en Perú bajo ${standard} (Ley 29783, D.S. 005-2012-TR, NTP 399.010-1, NTP 350.043-1, RNE A.130 e INDECI).
-Analiza cuidadosamente este plano arquitectónico/técnico de "${facilityName}" (Tipo de instalación: ${facilityType}).
+Analiza cuidadosamente este plano arquitectónico/técnico.
+Detecta automáticamente a partir del membrete, rótulos de ambientes y maquinaria visible el giro industrial y tipo exacto de instalación (ej: Industria de Alimentos y Bebidas, Pesquera, Farmacéutica, Agroindustria, Almacén Logístico, Metalmecánica, Edificio Administrativo, etc.) y aplica los criterios de riesgo correspondientes a ese sector.
 Notas adicionales o datos de IPERC del usuario: ${notes || 'Ninguna'}.
 
 Sistema de coordenadas normalizado:
@@ -152,15 +153,20 @@ Sistema de coordenadas normalizado:
 - Y va de 0 (borde superior de la imagen) a 1000 (borde inferior).
 
 Tu tarea:
-1. Identificar las zonas principales visibles en el plano (producción, almacenamiento, subestación/tableros eléctricos, oficinas, pasillos, carga/descarga, cocinas, etc.) con rectángulos (x, y, width, height en escala 0-1000) y evaluar su nivel de riesgo IPERC (probabilidad 1-5, severidad 1-5).
+1. Identificar las zonas principales visibles en el plano (producción, almacenamiento, subestación/tableros eléctricos, oficinas, pasillos, carga/descarga, cámaras de frío, cocinas, etc.) con rectángulos (x, y, width, height en escala 0-1000) y evaluar su nivel de riesgo IPERC (probabilidad 1-5, severidad 1-5).
 2. Ubicar pictogramas de seguridad reglamentarios exactamente donde correspondan en el plano (x, y en 0-1000). Usa EXCLUSIVAMENTE estos symbolId válidos: ${VALID_SYMBOL_IDS.join(', ')}.
    Significado normativo clave:
-   - Evacuación/Sismo: E_SISMO (Zona Segura en Caso de Sismos - en columnas/vigas), E001 (Salida de emergencia), E_RUTA_IZQ, E_RUTA_DER, E_RUTA_RECTA (Flechas de evacuación), E007 (Punto de reunión exterior), E003 (Botiquín), E_CAMILLA (Camilla), E012 (Ducha/Lavaojos), E_LUZ (Luz de emergencia).
+   - Evacuación/Sismo: E_SISMO (Zona Segura en Caso de Sismos - en columnas/vigas), E001 (Salida de emergencia en puertas), E_RUTA_IZQ, E_RUTA_DER, E_RUTA_RECTA (Flechas de evacuación), E007 (Punto de reunión exterior), E003 (Botiquín), E_CAMILLA (Camilla), E012 (Ducha/Lavaojos), E_LUZ (Luz de emergencia).
    - Incendios: F001 (Extintor PQS), F_CO2 (Extintor CO2 en tableros), F_AGUA (Extintor agua), F_K (Extintor K en cocinas), F002 (Gabinete contra incendios), F005 (Pulsador alarma), F_SIRENA (Sirena).
    - Advertencia: W001 (Peligro general), W012 (Riesgo eléctrico), W021 (Material inflamable), W024 (Atrapamiento/Maquinaria), W008 (Caída a desnivel), W011 (Piso resbaladizo), W016 (Sustancias químicas/tóxicas), W015 (Carga suspendida), W_MONTACARGA (Tránsito montacargas), W_NOISE (Ruido intenso >85 dB), W_BIOLOGICO (Riesgo biológico).
    - Obligación EPP: M014 (Casco), M004 (Lentes), M003 (Protección auditiva), M009 (Guantes), M016 (Respirador/Mascarilla), M_ARNES (Arnés trabajos altura), M_CHALECO (Chaleco reflectante).
    - Prohibición: P002 (Prohibido fumar/llama), P006 (Acceso restringido), P011 (No apagar con agua), P_CELULAR (Prohibido celulares), P_BLOQUEAR (No obstruir salidas).
-3. Trazar 1 a 3 rutas de evacuación lógicas siguiendo pasillos hasta puertas exteriores o salidas de escape.
+3. REGLA ESTRICTA DE RUTAS DE EVACUACIÓN (INDECI / RNE A.130):
+   - PROHIBIDO TERMINANTEMENTE trazar líneas rectas que atraviesen paredes, muros, tabiques o maquinaria.
+   - Cada ruta DEBE ser una polilínea ortogonal navegando estrictamente por el EJE CENTRAL DE LOS PASILLOS y vías de circulación libres.
+   - Paso obligado por vanos de puertas: Para salir de un recinto cerrado hacia el pasillo o exterior, la polilínea DEBE pasar exactamente por el vano de la puerta (door opening / arco de abatimiento).
+   - Genera una polilínea detallada con mínimo 4 a 8 puntos (waypoints) para cada ruta, reflejando los giros reales a 90° o curvas de los pasillos desde el interior hasta la puerta de salida exterior (E001) o escalera de emergencia (E_ESCALERA).
+   - El último punto (x, y) de cada ruta debe coincidir exactamente con una puerta de escape exterior o escalera.
 4. Dar recomendaciones prácticas de adecuación según normativa peruana y validación en campo.
 
 Sé muy preciso con las coordenadas visuales respecto a las paredes, pasillos, puertas y rótulos visibles en la imagen.`;

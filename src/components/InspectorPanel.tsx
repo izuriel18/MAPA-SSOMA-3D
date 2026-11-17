@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  ArrowLeftRight,
   Bot,
   Building2,
   CheckCircle2,
@@ -278,23 +279,17 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                 </p>
               </div>
 
-              <div className="space-y-1">
-                <label className="block text-[11px] font-medium text-slate-600">
-                  Tipo de Instalación
-                </label>
-                <select
-                  value={metadata.facilityType}
-                  onChange={(e) =>
-                    onUpdateMetadata({ ...metadata, facilityType: e.target.value })
-                  }
-                  className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-md"
-                >
-                  {FACILITY_TYPES.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
+              {/* Detección Automática de Instalación */}
+              <div className="p-2.5 bg-blue-50/70 border border-blue-200/80 rounded-lg flex items-start gap-2.5">
+                <Building2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                <div className="text-[11px] leading-tight">
+                  <span className="font-semibold text-blue-900 block mb-0.5">
+                    Giro e Instalación: Detección Automática
+                  </span>
+                  <span className="text-blue-700">
+                    Gemini analiza rótulos, membrete y maquinaria para clasificar el tipo de industria y aplicar los riesgos normativos específicos.
+                  </span>
+                </div>
               </div>
 
               <button
@@ -993,6 +988,28 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                     }
                     className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md"
                   />
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                  <span className="text-[11px] text-slate-600 font-medium">Dirección de Evacuación:</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onUpdateRoute({
+                        ...selectedRoute,
+                        points: [...selectedRoute.points].reverse(),
+                      })
+                    }
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md transition-colors"
+                    title="Invertir origen y fin de la ruta"
+                  >
+                    <ArrowLeftRight className="w-3.5 h-3.5" />
+                    <span>Invertir Sentido</span>
+                  </button>
+                </div>
+
+                <div className="p-2.5 bg-emerald-50/70 border border-emerald-200/80 rounded-lg text-[11px] text-emerald-800 leading-relaxed">
+                  💡 <strong>Edición directa en plano:</strong> Haz clic y arrastra cualquiera de los círculos numerados de la ruta directamente sobre el plano para esquivar paredes, tabiques o maquinaria.
                 </div>
               </div>
             )}
