@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Bot,
+  ChevronLeft,
+  ChevronRight,
   Compass,
   Download,
   FileSpreadsheet,
@@ -315,6 +318,8 @@ export default function App() {
   const [dwgNotice, setDwgNotice] = useState<string | null>(null);
   const [isLoadingFile, setIsLoadingFile] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(true);
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
 
   // AI State
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -563,7 +568,7 @@ export default function App() {
     setToolMode('select');
   };
 
-  const handleRunAiAnalysis = async () => {
+  const handleRunAiAnalysis = async (model: string = 'gemini-4-hydrogen') => {
     setIsAnalyzing(true);
     setAiError(null);
     try {
@@ -593,6 +598,7 @@ export default function App() {
           facilityName: metadata.facilityName,
           standard: metadata.standard,
           notes: ipercNotes,
+          model,
         }),
       });
 
@@ -948,7 +954,7 @@ export default function App() {
 
       {/* Main Content Area */}
       {view === 'editor' && (
-        <div className="flex-1 flex min-h-0 overflow-hidden">
+        <div className="flex-1 flex min-h-0 overflow-hidden relative">
           <SidebarCatalog
             blueprint={blueprint}
             activeSymbolId={activeSymbolId}
@@ -967,9 +973,11 @@ export default function App() {
             }
             dwgNotice={dwgNotice}
             isLoadingFile={isLoadingFile}
+            isCollapsed={!isLeftPanelOpen}
+            onToggleCollapse={() => setIsLeftPanelOpen(!isLeftPanelOpen)}
           />
 
-          <main className="flex-1 min-w-0 h-full">
+          <main className="flex-1 min-w-0 h-full relative">
             <BlueprintCanvas
               blueprint={blueprint}
               zones={zones}
@@ -989,51 +997,69 @@ export default function App() {
               onAddZone={handleAddZone}
               onAddRoute={handleAddRoute}
             />
+
+            {/* Botón flotante para reabrir el panel derecho si está oculto */}
+            {!isRightPanelOpen && (
+              <button
+                type="button"
+                onClick={() => setIsRightPanelOpen(true)}
+                title="Mostrar Panel de Inspección, IA e IPERC"
+                className="absolute top-3 right-3 z-30 inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900/90 hover:bg-slate-900 text-white text-xs font-semibold rounded-lg shadow-md backdrop-blur-xs transition-all hover:scale-105"
+              >
+                <Bot className="w-3.5 h-3.5 text-blue-400" />
+                <span>Abrir Panel / IA</span>
+                <ChevronLeft className="w-3.5 h-3.5 ml-0.5" />
+              </button>
+            )}
           </main>
 
-          <InspectorPanel
-            activeTab={inspectorTab}
-            onTabChange={setInspectorTab}
-            metadata={metadata}
-            onUpdateMetadata={setMetadata}
-            selectedType={selectedType}
-            selectedMarker={selectedMarker}
-            selectedZone={selectedZone}
-            selectedRoute={selectedRoute}
-            onUpdateMarker={(m) =>
-              setMarkers((prev) => prev.map((item) => (item.id === m.id ? m : item)))
-            }
-            onDeleteMarker={(id) => {
-              setMarkers((prev) => prev.filter((m) => m.id !== id));
-              setSelectedType(null);
-              setSelectedId(null);
-            }}
-            onUpdateZone={(z) =>
-              setZones((prev) => prev.map((item) => (item.id === z.id ? z : item)))
-            }
-            onDeleteZone={(id) => {
-              setZones((prev) => prev.filter((z) => z.id !== id));
-              setSelectedType(null);
-              setSelectedId(null);
-            }}
-            onUpdateRoute={(r) =>
-              setRoutes((prev) => prev.map((item) => (item.id === r.id ? r : item)))
-            }
-            onDeleteRoute={(id) => {
-              setRoutes((prev) => prev.filter((r) => r.id !== id));
-              setSelectedType(null);
-              setSelectedId(null);
-            }}
-            isAnalyzing={isAnalyzing}
-            aiError={aiError}
-            aiResult={aiResult}
-            onRunAiAnalysis={handleRunAiAnalysis}
-            onApplyAiSuggestions={handleApplyAiSuggestions}
-            onAskAiAdvisor={handleAskAiAdvisor}
-            ipercRows={ipercRows}
-            onUploadIpercExcel={handleUploadIpercExcel}
-            onApplyIpercToMap={handleApplyIpercToMap}
-          />
+          {isRightPanelOpen && (
+            <InspectorPanel
+              activeTab={inspectorTab}
+              onTabChange={setInspectorTab}
+              metadata={metadata}
+              onUpdateMetadata={setMetadata}
+              selectedType={selectedType}
+              selectedMarker={selectedMarker}
+              selectedZone={selectedZone}
+              selectedRoute={selectedRoute}
+              onUpdateMarker={(m) =>
+                setMarkers((prev) => prev.map((item) => (item.id === m.id ? m : item)))
+              }
+              onDeleteMarker={(id) => {
+                setMarkers((prev) => prev.filter((m) => m.id !== id));
+                setSelectedType(null);
+                setSelectedId(null);
+              }}
+              onUpdateZone={(z) =>
+                setZones((prev) => prev.map((item) => (item.id === z.id ? z : item)))
+              }
+              onDeleteZone={(id) => {
+                setZones((prev) => prev.filter((z) => z.id !== id));
+                setSelectedType(null);
+                setSelectedId(null);
+              }}
+              onUpdateRoute={(r) =>
+                setRoutes((prev) => prev.map((item) => (item.id === r.id ? r : item)))
+              }
+              onDeleteRoute={(id) => {
+                setRoutes((prev) => prev.filter((r) => r.id !== id));
+                setSelectedType(null);
+                setSelectedId(null);
+              }}
+              isAnalyzing={isAnalyzing}
+              aiError={aiError}
+              aiResult={aiResult}
+              onRunAiAnalysis={handleRunAiAnalysis}
+              onApplyAiSuggestions={handleApplyAiSuggestions}
+              onAskAiAdvisor={handleAskAiAdvisor}
+              ipercRows={ipercRows}
+              onUploadIpercExcel={handleUploadIpercExcel}
+              onApplyIpercToMap={handleApplyIpercToMap}
+              onExportIpercExcel={handleExportIpercExcel}
+              onToggleCollapse={() => setIsRightPanelOpen(false)}
+            />
+          )}
         </div>
       )}
 

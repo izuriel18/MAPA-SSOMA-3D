@@ -58,6 +58,7 @@ app.post(['/api/ai/analyze-blueprint', '/ai/analyze-blueprint'], async (req: Req
       facilityName = 'Instalación Principal',
       standard = 'NTP 399.010-1 / Ley 29783 / INDECI',
       notes = '',
+      model = GEMINI_MODEL,
     } = req.body as {
       imageBase64?: string;
       mimeType?: string;
@@ -65,6 +66,7 @@ app.post(['/api/ai/analyze-blueprint', '/ai/analyze-blueprint'], async (req: Req
       facilityName?: string;
       standard?: string;
       notes?: string;
+      model?: string;
     };
 
     if (!imageBase64) {
@@ -97,102 +99,124 @@ Tu tarea:
 
 Sé muy preciso con las coordenadas visuales respecto a las paredes, pasillos, puertas y rótulos visibles en la imagen.`;
 
-    const response = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType,
-              data: cleanBase64,
+    let activeModel = model;
+    let fallbackNotice = '';
+
+    const executeAnalysis = async (targetModel: string) => {
+      return await ai.models.generateContent({
+        model: targetModel,
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                mimeType,
+                data: cleanBase64,
+              },
             },
-          },
-          { text: prompt },
-        ],
-      },
-      config: {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            summary: {
-              type: Type.STRING,
-              description: 'Resumen técnico ejecutivo del plano analizado y principales hallazgos de riesgo.',
-            },
-            zones: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  name: { type: Type.STRING },
-                  riskCategory: {
-                    type: Type.STRING,
-                    description: 'Una de: Mecánico, Eléctrico, Incendio, Químico, Físico, Ergonómico, Locativo, Biológico',
+            { text: prompt },
+          ],
+        },
+        config: {
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              summary: {
+                type: Type.STRING,
+                description: 'Resumen técnico ejecutivo del plano analizado y principales hallazgos de riesgo.',
+              },
+              zones: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    name: { type: Type.STRING },
+                    riskCategory: {
+                      type: Type.STRING,
+                      description: 'Una de: Mecánico, Eléctrico, Incendio, Químico, Físico, Ergonómico, Locativo, Biológico',
+                    },
+                    x: { type: Type.NUMBER, description: 'Coordenada X esquina superior izquierda (0-1000)' },
+                    y: { type: Type.NUMBER, description: 'Coordenada Y esquina superior izquierda (0-1000)' },
+                    width: { type: Type.NUMBER, description: 'Ancho de zona (0-1000)' },
+                    height: { type: Type.NUMBER, description: 'Alto de zona (0-1000)' },
+                    probability: { type: Type.INTEGER, description: 'Probabilidad de 1 a 5' },
+                    severity: { type: Type.INTEGER, description: 'Severidad de 1 a 5' },
+                    controls: { type: Type.STRING, description: 'Controles recomendados de ingeniería, administrativos y EPP' },
                   },
-                  x: { type: Type.NUMBER, description: 'Coordenada X esquina superior izquierda (0-1000)' },
-                  y: { type: Type.NUMBER, description: 'Coordenada Y esquina superior izquierda (0-1000)' },
-                  width: { type: Type.NUMBER, description: 'Ancho de zona (0-1000)' },
-                  height: { type: Type.NUMBER, description: 'Alto de zona (0-1000)' },
-                  probability: { type: Type.INTEGER, description: 'Probabilidad de 1 a 5' },
-                  severity: { type: Type.INTEGER, description: 'Severidad de 1 a 5' },
-                  controls: { type: Type.STRING, description: 'Controles recomendados de ingeniería, administrativos y EPP' },
+                  required: ['name', 'riskCategory', 'x', 'y', 'width', 'height', 'probability', 'severity', 'controls'],
                 },
-                required: ['name', 'riskCategory', 'x', 'y', 'width', 'height', 'probability', 'severity', 'controls'],
               },
-            },
-            markers: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  symbolId: { type: Type.STRING },
-                  label: { type: Type.STRING },
-                  zoneName: { type: Type.STRING },
-                  x: { type: Type.NUMBER },
-                  y: { type: Type.NUMBER },
-                  riskCategory: { type: Type.STRING },
-                  probability: { type: Type.INTEGER },
-                  severity: { type: Type.INTEGER },
-                  notes: { type: Type.STRING },
+              markers: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    symbolId: { type: Type.STRING },
+                    label: { type: Type.STRING },
+                    zoneName: { type: Type.STRING },
+                    x: { type: Type.NUMBER },
+                    y: { type: Type.NUMBER },
+                    riskCategory: { type: Type.STRING },
+                    probability: { type: Type.INTEGER },
+                    severity: { type: Type.INTEGER },
+                    notes: { type: Type.STRING },
+                  },
+                  required: ['symbolId', 'label', 'zoneName', 'x', 'y', 'riskCategory', 'probability', 'severity', 'notes'],
                 },
-                required: ['symbolId', 'label', 'zoneName', 'x', 'y', 'riskCategory', 'probability', 'severity', 'notes'],
               },
-            },
-            evacuationRoutes: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  name: { type: Type.STRING },
-                  points: {
-                    type: Type.ARRAY,
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        x: { type: Type.NUMBER },
-                        y: { type: Type.NUMBER },
+              evacuationRoutes: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    name: { type: Type.STRING },
+                    points: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          x: { type: Type.NUMBER },
+                          y: { type: Type.NUMBER },
+                        },
+                        required: ['x', 'y'],
                       },
-                      required: ['x', 'y'],
                     },
                   },
+                  required: ['name', 'points'],
                 },
-                required: ['name', 'points'],
+              },
+              cadTips: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: 'Recomendaciones prácticas para mejorar el plano base DWG/PDF o validar en campo.',
               },
             },
-            cadTips: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: 'Recomendaciones prácticas para mejorar el plano base DWG/PDF o validar en campo.',
-            },
+            required: ['summary', 'zones', 'markers', 'evacuationRoutes', 'cadTips'],
           },
-          required: ['summary', 'zones', 'markers', 'evacuationRoutes', 'cadTips'],
         },
-      },
-    });
+      });
+    };
+
+    let response;
+    try {
+      response = await executeAnalysis(activeModel);
+    } catch (modelErr: any) {
+      if (activeModel === 'gemini-4-hydrogen') {
+        console.warn('Gemini 4 Hydrogen falló, conmutando a gemini-3.8-flash...', modelErr?.message);
+        activeModel = 'gemini-3.8-flash';
+        fallbackNotice = 'ℹ️ Nota: Gemini 4 Hydrogen presentó alta demanda temporal en Google. El análisis se completó exitosamente con Gemini 3.8 Flash.\n\n';
+        response = await executeAnalysis(activeModel);
+      } else {
+        throw modelErr;
+      }
+    }
 
     const rawText = (response.text ?? '{}').trim();
     const parsed = JSON.parse(rawText);
+    if (fallbackNotice && parsed.summary) {
+      parsed.summary = fallbackNotice + parsed.summary;
+    }
     res.json(parsed);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Error interno al analizar el plano.';

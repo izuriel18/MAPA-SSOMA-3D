@@ -3,11 +3,13 @@ import {
   Bot,
   Building2,
   CheckCircle2,
+  ChevronRight,
   FileSpreadsheet,
   FileText,
   Loader2,
   Send,
   Sliders,
+  Sparkles,
   Trash2,
   Upload,
 } from 'lucide-react';
@@ -46,13 +48,15 @@ interface InspectorPanelProps {
   isAnalyzing: boolean;
   aiError: string | null;
   aiResult: AiAnalysisResult | null;
-  onRunAiAnalysis: () => void;
+  onRunAiAnalysis: (model?: string) => void;
   onApplyAiSuggestions: (replaceExisting: boolean) => void;
   onAskAiAdvisor: (question: string) => Promise<string>;
   // IPERC Excel Integration
   ipercRows: IpercRow[];
   onUploadIpercExcel: (file: File) => Promise<void>;
   onApplyIpercToMap: () => void;
+  onExportIpercExcel?: () => void;
+  onToggleCollapse?: () => void;
 }
 
 const RISK_CATEGORIES: RiskCategory[] = [
@@ -108,7 +112,10 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
   ipercRows,
   onUploadIpercExcel,
   onApplyIpercToMap,
+  onExportIpercExcel,
+  onToggleCollapse,
 }) => {
+  const [aiModel, setAiModel] = useState<string>('gemini-4-hydrogen');
   const [question, setQuestion] = useState('');
   const [advisorReply, setAdvisorReply] = useState<string | null>(null);
   const [isAskingAdvisor, setIsAskingAdvisor] = useState(false);
@@ -153,62 +160,74 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
   return (
     <aside className="w-[330px] shrink-0 bg-white border-l border-slate-200 flex flex-col h-full overflow-hidden">
       {/* Tab Navigation */}
-      <div className="grid grid-cols-4 border-b border-slate-200 text-xs font-semibold text-slate-600 bg-slate-50">
-        <button
-          type="button"
-          onClick={() => onTabChange('ai')}
-          className={`py-2.5 px-1 inline-flex items-center justify-center gap-1 border-b-2 transition-colors ${
-            activeTab === 'ai'
-              ? 'border-blue-600 text-blue-600 bg-white'
-              : 'border-transparent hover:text-slate-900'
-          }`}
-          title="Asistente de IA y Visión en Planos"
-        >
-          <Bot className="w-3.5 h-3.5" />
-          <span>IA SST</span>
-        </button>
+      <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 shrink-0">
+        <div className="flex-1 grid grid-cols-4 text-xs font-semibold text-slate-600">
+          <button
+            type="button"
+            onClick={() => onTabChange('ai')}
+            className={`py-2 px-1 inline-flex items-center justify-center gap-1 border-b-2 transition-colors ${
+              activeTab === 'ai'
+                ? 'border-blue-600 text-blue-600 bg-white'
+                : 'border-transparent hover:text-slate-900'
+            }`}
+            title="Asistente de IA y Visión en Planos"
+          >
+            <Bot className="w-3.5 h-3.5" />
+            <span>IA SST</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => onTabChange('iperc')}
-          className={`py-2.5 px-1 inline-flex items-center justify-center gap-1 border-b-2 transition-colors ${
-            activeTab === 'iperc'
-              ? 'border-emerald-600 text-emerald-600 bg-white'
-              : 'border-transparent hover:text-slate-900'
-          }`}
-          title="Ingesta de Matriz IPERC en Excel"
-        >
-          <FileSpreadsheet className="w-3.5 h-3.5" />
-          <span>IPERC</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => onTabChange('iperc')}
+            className={`py-2 px-1 inline-flex items-center justify-center gap-1 border-b-2 transition-colors ${
+              activeTab === 'iperc'
+                ? 'border-emerald-600 text-emerald-600 bg-white'
+                : 'border-transparent hover:text-slate-900'
+            }`}
+            title="Ingesta de Matriz IPERC en Excel"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>IPERC</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => onTabChange('cajetin')}
-          className={`py-2.5 px-1 inline-flex items-center justify-center gap-1 border-b-2 transition-colors ${
-            activeTab === 'cajetin'
-              ? 'border-indigo-600 text-indigo-600 bg-white'
-              : 'border-transparent hover:text-slate-900'
-          }`}
-          title="Cajetín Legal Oficial (SGSST Perú)"
-        >
-          <Building2 className="w-3.5 h-3.5" />
-          <span>Cajetín</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => onTabChange('cajetin')}
+            className={`py-2 px-1 inline-flex items-center justify-center gap-1 border-b-2 transition-colors ${
+              activeTab === 'cajetin'
+                ? 'border-indigo-600 text-indigo-600 bg-white'
+                : 'border-transparent hover:text-slate-900'
+            }`}
+            title="Cajetín Legal Oficial (SGSST Perú)"
+          >
+            <Building2 className="w-3.5 h-3.5" />
+            <span>Cajetín</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => onTabChange('properties')}
-          className={`py-2.5 px-1 inline-flex items-center justify-center gap-1 border-b-2 transition-colors ${
-            activeTab === 'properties'
-              ? 'border-slate-900 text-slate-900 bg-white'
-              : 'border-transparent hover:text-slate-900'
-          }`}
-          title="Propiedades del elemento seleccionado"
-        >
-          <Sliders className="w-3.5 h-3.5" />
-          <span>Prop.</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => onTabChange('properties')}
+            className={`py-2 px-1 inline-flex items-center justify-center gap-1 border-b-2 transition-colors ${
+              activeTab === 'properties'
+                ? 'border-slate-900 text-slate-900 bg-white'
+                : 'border-transparent hover:text-slate-900'
+            }`}
+            title="Propiedades del elemento seleccionado"
+          >
+            <Sliders className="w-3.5 h-3.5" />
+            <span>Prop.</span>
+          </button>
+        </div>
+        {onToggleCollapse && (
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            title="Ocultar panel derecho para ampliar área de trabajo"
+            className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors border-l border-slate-200"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -219,15 +238,47 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
           <>
             <div className="space-y-3">
               <div>
-                <h3 className="text-xs font-semibold text-slate-900">
-                  Análisis Multimodal con Gemini 2.5
-                </h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-semibold text-slate-900">
+                    Análisis Multimodal con IA
+                  </h3>
+                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">
+                    {aiModel === 'gemini-4-hydrogen'
+                      ? 'Hydrogen 4'
+                      : aiModel === 'gemini-3.8-flash'
+                      ? 'Flash 3.8'
+                      : 'Pro 2.5'}
+                  </span>
+                </div>
                 <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
                   Examina el plano cargado, reconoce las áreas y propone Zonas IPER, Señalética NTP 399.010-1 y Rutas de Escape.
                 </p>
               </div>
 
-              <div className="space-y-2">
+              {/* Selector de Modelo IA (Opción 1) */}
+              <div className="space-y-1 p-2 bg-slate-50 border border-slate-200 rounded-lg">
+                <label className="block text-[11px] font-semibold text-slate-700">
+                  Motor de IA (Gemini)
+                </label>
+                <select
+                  value={aiModel}
+                  onChange={(e) => setAiModel(e.target.value)}
+                  className="w-full px-2 py-1.5 text-xs bg-white border border-slate-300 rounded-md focus:outline-none focus:border-blue-500 font-medium text-slate-800"
+                >
+                  <option value="gemini-4-hydrogen">Gemini 4 Hydrogen (Investigación / Razonamiento)</option>
+                  <option value="gemini-3.8-flash">Gemini 3.8 Flash (Recomendado / Rápido 3-5s)</option>
+                  <option value="gemini-2.5-pro">Gemini 2.5 Pro (Análisis exhaustivo)</option>
+                </select>
+                <p className="text-[10px] text-slate-500 leading-tight">
+                  {aiModel === 'gemini-4-hydrogen'
+                    ? '⚡ Razonamiento avanzado. Si Google reporta alta demanda, conmuta automáticamente a Flash.'
+                    : aiModel === 'gemini-3.8-flash'
+                    ? '✓ Modelo oficial recomendado: rápido, de alta disponibilidad y excelente visión.'
+                    : '🔍 Mayor capacidad analítica multimodal para planos extensos.'}
+                </p>
+              </div>
+
+              <div className="space-y-1">
                 <label className="block text-[11px] font-medium text-slate-600">
                   Tipo de Instalación
                 </label>
@@ -249,13 +300,13 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
               <button
                 type="button"
                 disabled={isAnalyzing}
-                onClick={onRunAiAnalysis}
+                onClick={() => onRunAiAnalysis(aiModel)}
                 className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-xs font-semibold rounded-lg transition-colors shadow-xs"
               >
                 {isAnalyzing ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Analizando Plano con Gemini...
+                    Analizando Plano con {aiModel === 'gemini-4-hydrogen' ? 'Hydrogen' : 'Gemini'}...
                   </>
                 ) : (
                   <>

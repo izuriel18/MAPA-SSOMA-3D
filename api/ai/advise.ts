@@ -68,3 +68,4 @@ Consulta del usuario: ${question}`,
     res.status(500).json({ error: message });
   }
 }
+
